@@ -261,6 +261,7 @@ const mongoose = require('mongoose');
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  role: { type: String, enum: ['user', 'admin'], default: 'user' } // Role-based access control
 });
 
 const User = mongoose.model('User', userSchema);
@@ -296,199 +297,24 @@ setup_swagger_docs() {
 const swaggerDocument = {
   openapi: '3.0.0',
   info: {
-    title: 'My Express API',
+    title: 'Express API Documentation',
     version: '1.0.0',
-    description: 'API documentation for My Express API',
+    description: 'API Documentation for Express App',
   },
-  paths: {
-    '/': {
-      get: {
-        summary: 'Home route',
-        responses: {
-          200: {
-            description: 'Successful response',
-            content: {
-              'text/plain': {
-                schema: {
-                  type: 'string',
-                  example: 'Hello World!',
-                },
-              },
-            },
-          },
-        },
-      },
+  servers: [
+    {
+      url: 'http://localhost:3000',
+      description: 'Development Server',
     },
-    '/login': {
-      post: {
-        summary: 'Login route',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  username: { type: 'string' },
-                  password: { type: 'string' },
-                },
-                required: ['username', 'password'],
-              },
-            },
-          },
-        },
-        responses: {
-          200: {
-            description: 'Successful login',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    accessToken: { type: 'string' },
-                    refreshToken: { type: 'string' },
-                  },
-                },
-                example: {
-                  accessToken: 'your_access_token_here',
-                  refreshToken: 'your_refresh_token_here',
-                },
-              },
-            },
-          },
-          400: {
-            description: 'Bad request',
-          },
-          401: {
-            description: 'Unauthorized',
-          },
-          500: {
-            description: 'Internal Server Error',
-          },
-        },
-      },
-    },
-    '/register': {
-      post: {
-        summary: 'Register route',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  username: { type: 'string' },
-                  password: { type: 'string' },
-                },
-                required: ['username', 'password'],
-              },
-            },
-          },
-        },
-        responses: {
-          201: {
-            description: 'Successful registration',
-            content: {
-              'text/plain': {
-                schema: {
-                  type: 'string',
-                  example: 'User registered successfully',
-                },
-              },
-            },
-          },
-          400: {
-            description: 'Bad request',
-          },
-          500: {
-            description: 'Internal Server Error',
-          },
-        },
-      },
-    },
-    '/refresh-token': {
-      post: {
-        summary: 'Refresh token route',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  refreshToken: { type: 'string' },
-                },
-                required: ['refreshToken'],
-              },
-            },
-          },
-        },
-        responses: {
-          200: {
-            description: 'Successful token refresh',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    accessToken: { type: 'string' },
-                  },
-                },
-                example: {
-                  accessToken: 'your_new_access_token_here',
-                },
-              },
-            },
-          },
-          400: {
-            description: 'Bad request',
-          },
-          401: {
-            description: 'Unauthorized',
-          },
-          403: {
-            description: 'Invalid refresh token',
-          },
-          500: {
-            description: 'Internal Server Error',
-          },
-        },
-      },
-    },
-  },
+  ],
 };
 
 module.exports = swaggerDocument;
 EOL
 }
 
-# Function to set up initial logger middleware
-setup_logger_middleware() {
-  cat <<EOL > src/middleware/logger.js
-const logger = (req, res, next) => {
-  console.log(\`\${new Date().toISOString()} - \${req.method} \${req.originalUrl} - \${req.ip}\`);
-  next();
-};
-
-module.exports = { logger };
-EOL
-}
-
-# Function to set up initial error handling middleware
-setup_error_handler_middleware() {
-  cat <<EOL > src/middleware/errorHandler.js
-const errorHandler = (err, req, res, next) => {
-  console.error(\`Error: \${err.message}\`);
-  res.status(500).send('Internal Server Error');
-};
-
-module.exports = errorHandler;
-EOL
-}
-
 # Function to set up JWT authentication middleware
-setup_jwt_authentication_middleware() {
+setup_jwt_middleware() {
   cat <<EOL > src/middleware/authenticate.js
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = process.env;
@@ -516,210 +342,42 @@ module.exports = { authenticateJWT };
 EOL
 }
 
-# Function to set up initial tests
-setup_initial_tests() {
-  cat <<EOL > src/tests/index.test.js
-const request = require('supertest');
-const app = require('../index');
-const mongoose = require('mongoose');
+# Function to set up initial error handling middleware
+setup_error_handler() {
+  cat <<EOL > src/middleware/errorHandler.js
+const errorHandler = (err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send('Something broke!');
+};
 
-afterAll(async () => {
-  await mongoose.connection.close();
-});
-
-describe('GET /', () => {
-  it('should return Hello World!', async () => {
-    const res = await request(app).get('/');
-    expect(res.statusCode).toEqual(200);
-    expect(res.text).toBe('Hello World!');
-  });
-});
-
-describe('POST /register', () => {
-  it('should register a new user', async () => {
-    const res = await request(app)
-      .post('/register')
-      .send({ username: 'testuser', password: 'testpassword' });
-    expect(res.statusCode).toEqual(201);
-  });
-});
-
-describe('POST /login', () => {
-  it('should login an existing user', async () => {
-    await request(app)
-      .post('/register')
-      .send({ username: 'testuser', password: 'testpassword' });
-    const res = await request(app)
-      .post('/login')
-      .send({ username: 'testuser', password: 'testpassword' });
-    expect(res.statusCode).toEqual(200);
-    expect(res.body).toHaveProperty('accessToken');
-    expect(res.body).toHaveProperty('refreshToken');
-  });
-});
-
-describe('POST /refresh-token', () => {
-  it('should refresh access token using refresh token', async () => {
-    const loginRes = await request(app)
-      .post('/login')
-      .send({ username: 'testuser', password: 'testpassword' });
-    const refreshToken = loginRes.body.refreshToken;
-    const res = await request(app)
-      .post('/refresh-token')
-      .send({ refreshToken });
-    expect(res.statusCode).toEqual(200);
-    expect(res.body).toHaveProperty('accessToken');
-  });
-
-  it('should return 401 for missing refresh token', async () => {
-    const res = await request(app)
-      .post('/refresh-token')
-      .send({});
-    expect(res.statusCode).toEqual(401);
-  });
-
-  it('should return 403 for invalid refresh token', async () => {
-    const res = await request(app)
-      .post('/refresh-token')
-      .send({ refreshToken: 'invalid_refresh_token' });
-    expect(res.statusCode).toEqual(403);
-  });
-});
+module.exports = errorHandler;
 EOL
 }
 
-# Function to set up ESLint configuration
-setup_eslint_config() {
-  cat <<EOL > .eslintrc.json
-{
-  "env": {
-    "browser": true,
-    "es2021": true,
-    "node": true,
-    "jest": true
-  },
-  "extends": "eslint:recommended",
-  "parserOptions": {
-    "ecmaVersion": 12,
-    "sourceType": "module"
-  },
-  "rules": {
-    "indent": ["error", 2],
-    "linebreak-style": ["error", "unix"],
-    "quotes": ["error", "single"],
-    "semi": ["error", "always"]
-  }
-}
-EOL
+# Function to complete the setup
+complete_setup() {
+  echo "Setup completed successfully!"
 }
 
-# Function to update package.json scripts
-update_package_json_scripts() {
-  npm set-script start "node src/index.js"
-  npm set-script dev "nodemon src/index.js"
-  npm set-script test "jest --coverage"
-  npm set-script lint "eslint 'src/**/*.js'"
+# Main function to execute setup steps
+main() {
+  initialize_npm_project
+  install_dependencies
+  install_dev_dependencies
+  setup_project_structure
+  populate_initial_files
+  setup_environment_files
+  setup_express_app
+  setup_initial_routes
+  setup_home_controller
+  setup_auth_controller
+  setup_user_model
+  setup_env_validation
+  setup_swagger_docs
+  setup_jwt_middleware
+  setup_error_handler
+  complete_setup
 }
 
-# Function to create README.md file
-create_readme_file() {
-  cat <<EOL > README.md
-# My Express App
-
-This is a simple Express.js project with JWT authentication and refresh tokens.
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js
-- npm
-- MongoDB
-
-### Installation
-
-1. Clone the repository:
-   \`\`\`
-   git clone https://github.com/yourusername/my-express-app.git
-   cd my-express-app
-   \`\`\`
-
-2. Install dependencies:
-   \`\`\`
-   npm install
-   \`\`\`
-
-3. Set up environment variables:
-   - Create a \`.env\` file based on \`.env.example\`.
-   - Adjust MongoDB URI and JWT Secret in \`.env\`.
-
-### Running the Server
-
-- Development mode (with nodemon):
-  \`\`\`
-  npm run dev
-  \`\`\`
-
-- Production mode:
-  \`\`\`
-  npm start
-  \`\`\`
-
-### Running Tests
-
-\`\`\`
-npm test
-\`\`\`
-
-### Linting
-
-\`\`\`
-npm run lint
-\`\`\`
-
-### API Documentation
-
-- Swagger API documentation is available at \`http://localhost:3000/api-docs\`.
-
-## Project Structure
-
-The project structure is as follows:
-
-\`\`\`
-my-express-app/
-│
-├── src/
-│   ├── controllers/
-│   │   ├── authController.js
-│   │   └── homeController.js
-│   ├── middleware/
-│   │   ├── authenticate.js
-│   │   ├── errorHandler.js
-│   │   └── logger.js
-│   ├── models/
-│   │   └── user.js
-│   ├── routes/
-│   │   └── index.js
-│   ├── config/
-│   │   ├── config.js
-│   │   └── validateEnv.js
-│   ├── tests/
-│   │   └── index.test.js
-│   └── docs/
-│       └── swagger.js
-├── .env
-├── .env.example
-├── .eslintrc.json
-├── README.md
-└── package.json
-\`\`\`
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Express.js
-- MongoDB
-- JWT (JSON Web Tokens)
+# Execute the main function
+main
