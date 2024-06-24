@@ -161,6 +161,7 @@ cat <<EOL > src/controllers/authController.js
 const User = require('../models/user');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = process.env;
 
 const register = async (req, res) => {
   try {
@@ -182,7 +183,7 @@ const login = async (req, res) => {
     if (!user || !await bcrypt.compare(password, user.password)) {
       return res.status(401).send('Invalid credentials');
     }
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '1h' });
     res.status(200).json({ token });
   } catch (err) {
     console.error('Error logging in:', err.message);
@@ -317,10 +318,7 @@ const swaggerDocument = {
           201: {
             description: 'User registered successfully',
           },
-          500: {
-            description: 'Internal Server Error',
-          },
-        },
+          500: {description: 'Internal Server Error',
         },
       },
     },
