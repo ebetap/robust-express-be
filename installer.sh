@@ -37,12 +37,16 @@ initialize_npm_project() {
 
 # Function to install dependencies with specific versions
 install_dependencies() {
-  npm install express@^4.17.1 body-parser@^1.19.0 dotenv@^10.0.0 helmet@^4.6.0 cors@^2.8.5 mongoose@^6.2.1 jsonwebtoken@^8.5.1 bcryptjs@^2.4.3 joi@^17.4.0 swagger-ui-express@^4.1.6 express-rate-limit@^5.2.6 --save
+  npm install express@^4.17.1 body-parser@^1.19.0 dotenv@^10.0.0 helmet@^4.6.0 cors@^2.8.5 mongoose@^6.2.1 \
+    jsonwebtoken@^8.5.1 bcryptjs@^2.4.3 joi@^17.4.0 swagger-ui-express@^4.1.6 express-rate-limit@^5.2.6 \
+    csurf@^1.11.0 express-mongo-sanitize@^2.1.0 compression@^1.7.4 morgan@^1.10.0 cookie-parser@^1.4.5 \
+    connect-mongo@^4.5.0 multer@^1.4.3 nodemailer@^6.7.2 socket.io@^4.4.1 --save
 }
 
 # Function to install dev dependencies with specific versions
 install_dev_dependencies() {
-  npm install --save-dev nodemon@^2.0.15 jest@^27.4.7 supertest@^6.2.0 eslint@^8.3.0
+  npm install --save-dev nodemon@^2.0.15 jest@^27.4.7 supertest@^6.2.0 eslint@^8.3.0 eslint-config-airbnb-base@^16.1.0 \
+    eslint-plugin-import@^2.25.2 eslint-plugin-node@^11.1.0 eslint-plugin-jest@^25.1.0 @types/jest@^27.0.3
 }
 
 # Function to set up project structure
@@ -55,6 +59,7 @@ setup_project_structure() {
   create_directory "src/tests"
   create_directory "src/models"
   create_directory "src/docs"
+  create_directory "logs"
 }
 
 # Function to populate initial files
@@ -82,6 +87,9 @@ setup_environment_files() {
     echo "NODE_ENV=development" >> .env.example
     echo "MONGO_URI=mongodb://localhost:27017/my-express-app" >> .env.example
     echo "JWT_SECRET=your_jwt_secret" >> .env.example
+    echo "CSRF_SECRET=your_csrf_secret" >> .env.example
+    echo "MAILER_EMAIL=user@example.com" >> .env.example
+    echo "MAILER_PASSWORD=password" >> .env.example
     echo "Created file: .env.example"
   else
     echo "File '.env.example' already exists and is not empty. Skipping population."
@@ -107,6 +115,16 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const swaggerUi = require('swagger-ui-express');
+const csurf = require('csurf');
+const mongoSanitize = require('express-mongo-sanitize');
+const compression = require('compression');
+const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
+const multer = require('multer');
+const nodemailer = require('nodemailer');
+const socketIo = require('socket.io');
+const http = require('http');
+const path = require('path');
 const routes = require('./routes');
 const { logger } = require('./middleware/logger');
 const errorHandler = require('./middleware/errorHandler');
@@ -119,6 +137,9 @@ dotenv.config();
 validateEnv();
 
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+
 const port = config.PORT || 3000;
 
 // Database connection
@@ -150,10 +171,26 @@ app.use(rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
 }));
-
-// Middleware
+app.use(cookieParser());
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 app.use(logger);
+app.use(errorHandler);
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Enable gzip compression
+app.use(compression());
+
+// Enable request logging
+app.use(morgan('combined'));
+
+// Prevent MongoDB Operator Injection and XSS
+app.use(mongoSanitize());
+
+// CSRF Protection
+app.use(csurf({ cookie: true }));
 
 // API documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
@@ -162,9 +199,20 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 app.use('/', routes);
 
 // Error handling middleware
-app.use(errorHandler);
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send('Something broke!');
+});
 
-app.listen(port, () => {
+// Socket.io implementation
+io.on('connection', (socket) => {
+  console.log('A user connected');
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
+});
+
+server.listen(port, () => {
   console.log(\`Server is running on port \${port}\`);
 });
 EOL
@@ -209,7 +257,8 @@ setup_auth_controller() {
 const User = require('../models/user');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { JWT_SECRET } = process.env;
+const nodemailer = require('nodemailer');
+const { JWT_SECRET, MAILER_EMAIL, MAILER_PASSWORD } = process.env;
 
 const generateAccessToken = (userId) => {
   return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '15m' });
@@ -278,6 +327,7 @@ const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role: { type: String, enum: ['user', 'admin'], default: 'user' } // Role-based access control
+});
 
 const User = mongoose.model('User', userSchema);
 
@@ -296,6 +346,9 @@ const envSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'production').default('development'),
   MONGO_URI: Joi.string().required(),
   JWT_SECRET: Joi.string().required(),
+  CSRF_SECRET: Joi.string().required(),
+  MAILER_EMAIL: Joi.string().email().required(),
+  MAILER_PASSWORD: Joi.string().required(),
 }).unknown().required();
 
 const { error, value: envVars } = envSchema.validate(process.env);
@@ -562,64 +615,43 @@ services:
     image: mongo:4.2
     ports:
       - "27017:27017"
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
 EOL
 }
 
-# Function to set up CI/CD with GitHub Actions
-setup_github_actions() {
-  mkdir -p .github/workflows
-  cat <<EOL > .github/workflows/node.js.yml
-name: Node.js CI
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [14, 16]
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Use Node.js \${{ matrix.node-version }}
-      uses: actions/setup-node@v2
-      with:
-        node-version: \${{ matrix.node-version }}
-    - run: npm install
-    - run: npm run lint
-    - run: npm test
-    - run: npm run build --if-present
-EOL
-}
-
-# Function to implement logging of requests and errors
-implement_request_error_logging() {
-  # Add logging middleware to the Express setup
-  local logger_file="src/middleware/logger.js"
-  cat <<EOL > "$logger_file"
-const logger = (req, res, next) => {
-  console.log(\`[\${new Date().toISOString()}] \${req.method} \${req.url}\`);
-  next();
+# Function to set up initial Jest testing configuration
+setup_jest_config() {
+  cat <<EOL > jest.config.js
+module.exports = {
+  testEnvironment: 'node',
+  verbose: true,
+  testPathIgnorePatterns: [
+    '/node_modules/',
+  ],
+  coveragePathIgnorePatterns: [
+    '/node_modules/',
+  ],
 };
-
-module.exports = { logger };
 EOL
-
-  # Update Dockerfile to include the logger middleware
-  sed -i 's#CMD \["node", "src/index.js"\]#CMD ["node", "-r", "./src/middleware/logger.js", "src/index.js"]#' Dockerfile
 }
 
-# Main function to execute setup steps
-main() {
+# Function to set up initial Jest test script
+setup_jest_tests() {
+  create_file "src/tests/home.test.js"
+  cat <<EOL > "src/tests/home.test.js"
+const request = require('supertest');
+const app = require('../index');
+
+describe('GET /', () => {
+  it('should return 200 OK', async () => {
+    const response = await request(app).get('/');
+    expect(response.status).toBe(200);
+  });
+});
+EOL
+}
+
+# Function to build the entire setup
+build_setup() {
   initialize_npm_project
   install_dependencies
   install_dev_dependencies
@@ -639,10 +671,12 @@ main() {
   seed_database
   setup_dockerfile
   setup_docker_compose
-  setup_github_actions
-  implement_request_error_logging
-  echo "Setup completed successfully!"
+  setup_jest_config
+  setup_jest_tests
 }
 
-# Execute the main function
-main
+# Execute the build_setup function to build the setup
+build_setup
+
+# Inform user that setup is complete
+echo "Setup script completed successfully."
