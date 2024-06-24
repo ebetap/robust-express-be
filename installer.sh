@@ -26,19 +26,21 @@ cd my-express-app
 npm init -y
 
 # Install Express.js and other dependencies
-npm install express body-parser dotenv helmet cors
+npm install express body-parser dotenv helmet cors mongoose jsonwebtoken bcryptjs joi swagger-ui-express express-rate-limit
 
 # Install development dependencies
 npm install --save-dev nodemon jest supertest eslint
 
 # Create directories and initial files
-mkdir -p src/routes src/config src/middleware src/controllers src/tests
-touch src/index.js src/routes/index.js src/config/config.js src/middleware/logger.js src/middleware/errorHandler.js src/controllers/homeController.js src/tests/index.test.js
+mkdir -p src/routes src/config src/middleware src/controllers src/tests src/models src/docs
+touch src/index.js src/routes/index.js src/config/config.js src/middleware/logger.js src/middleware/errorHandler.js src/controllers/homeController.js src/controllers/authController.js src/tests/index.test.js src/models/user.js src/config/validateEnv.js src/docs/swagger.js
 
 # Create a .env file (template)
 touch .env .env.example
 echo "PORT=3000" >> .env.example
 echo "NODE_ENV=development" >> .env.example
+echo "MONGO_URI=mongodb://localhost:27017/my-express-app" >> .env.example
+echo "JWT_SECRET=your_jwt_secret" >> .env.example
 cp .env.example .env
 
 # Add basic Express server setup to src/index.js
@@ -49,24 +51,47 @@ const dotenv = require('dotenv');
 const morgan = require('morgan');
 const helmet = require('helmet');
 const cors = require('cors');
+const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
+const swaggerUi = require('swagger-ui-express');
 const routes = require('./routes');
 const { logger } = require('./middleware/logger');
 const errorHandler = require('./middleware/errorHandler');
 const config = require('./config/config');
+const swaggerDocument = require('./docs/swagger');
+const validateEnv = require('./config/validateEnv');
 
 dotenv.config();
+validateEnv();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = config.port;
+
+// Database connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(() => {
+  console.log('Connected to MongoDB');
+}).catch((err) => {
+  console.error('Error connecting to MongoDB:', err.message);
+});
 
 // Security middlewares
 app.use(helmet());
 app.use(cors());
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+}));
 
 // Middleware
 app.use(bodyParser.json());
 app.use(morgan('dev'));
 app.use(logger);
+
+// API documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Routes
 app.use('/', routes);
@@ -85,10 +110,13 @@ EOL
 cat <<EOL > src/routes/index.js
 const express = require('express');
 const homeController = require('../controllers/homeController');
+const authController = require('../controllers/authController');
 
 const router = express.Router();
 
 router.get('/', homeController.getHome);
+router.post('/login', authController.login);
+router.post('/register', authController.register);
 
 module.exports = router;
 EOL
@@ -102,54 +130,206 @@ const getHome = (req, res) => {
 module.exports = { getHome };
 EOL
 
-# Add basic configuration to src/config/config.js
-cat <<EOL > src/config/config.js
-const config = {
-  development: {
-    port: process.env.PORT || 3000,
-    envName: 'development',
-  },
-  production: {
-    port: process.env.PORT || 3000,
-    envName: 'production',
-  },
+# Add auth controller to src/controllers/authController.js
+cat <<EOL > src/controllers/authController.js
+const User = require('../models/user');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+const register = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = new User({ username, password: hashedPassword });
+    await user.save();
+    res.status(201).send('User registered successfully');
+  } catch (err) {
+    res.status(500).send('Error registering user');
+  }
 };
 
-const env = process.env.NODE_ENV || 'development';
+const login = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await User.findOne({ username });
+    if (!user || !await bcrypt.compare(password, user.password)) {
+      return res.status(401).send('Invalid credentials');
+    }
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    res.status(200).json({ token });
+  } catch (err) {
+    res.status(500).send('Error logging in');
+  }
+};
 
-module.exports = config[env];
+module.exports = { register, login };
 EOL
 
-# Add logger middleware to src/middleware/logger.js
-cat <<EOL > src/middleware/logger.js
-const logger = (req, res, next) => {
-  console.log(\`\${req.method} \${req.url}\`);
-  next();
-};
+# Add user model to src/models/user.js
+cat <<EOL > src/models/user.js
+const mongoose = require('mongoose');
 
-module.exports = { logger };
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+});
+
+const User = mongoose.model('User', userSchema);
+
+module.exports = User;
 EOL
 
-# Add error handling middleware to src/middleware/errorHandler.js
-cat <<EOL > src/middleware/errorHandler.js
-const errorHandler = (err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).send('Something broke!');
+# Add environment variable validation to src/config/validateEnv.js
+cat <<EOL > src/config/validateEnv.js
+const Joi = require('joi');
+
+const envSchema = Joi.object({
+  PORT: Joi.number().default(3000),
+  NODE_ENV: Joi.string().valid('development', 'production').default('development'),
+  MONGO_URI: Joi.string().required(),
+  JWT_SECRET: Joi.string().required(),
+}).unknown().required();
+
+const { error, value } = envSchema.validate(process.env);
+if (error) {
+  throw new Error(\`Environment validation error: \${error.message}\`);
+}
+
+module.exports = value;
+EOL
+
+# Add Swagger documentation setup to src/docs/swagger.js
+cat <<EOL > src/docs/swagger.js
+const swaggerDocument = {
+  openapi: '3.0.0',
+  info: {
+    title: 'My Express API',
+    version: '1.0.0',
+    description: 'API documentation for My Express API',
+  },
+  paths: {
+    '/': {
+      get: {
+        summary: 'Home route',
+        responses: {
+          200: {
+            description: 'Successful response',
+            content: {
+              'application/json': {
+                example: 'Hello World!',
+              },
+            },
+          },
+        },
+      },
+    },
+    '/login': {
+      post: {
+        summary: 'Login route',
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  username: { type: 'string' },
+                  password: { type: 'string' },
+                },
+                required: ['username', 'password'],
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Successful login',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    token: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          401: {
+            description: 'Invalid credentials',
+          },
+        },
+      },
+    },
+    '/register': {
+      post: {
+        summary: 'Register route',
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  username: { type: 'string' },
+                  password: { type: 'string' },
+                },
+                required: ['username', 'password'],
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'User registered successfully',
+          },
+          500: {
+            description: 'Error registering user',
+          },
+        },
+      },
+    },
+  },
 };
 
-module.exports = errorHandler;
+module.exports = swaggerDocument;
 EOL
 
 # Add basic test setup to src/tests/index.test.js
 cat <<EOL > src/tests/index.test.js
 const request = require('supertest');
 const app = require('../index');
+const mongoose = require('mongoose');
+
+afterAll(async () => {
+  await mongoose.connection.close();
+});
 
 describe('GET /', () => {
   it('should return Hello World!', async () => {
     const res = await request(app).get('/');
     expect(res.statusCode).toEqual(200);
     expect(res.text).toBe('Hello World!');
+  });
+});
+
+describe('POST /register', () => {
+  it('should register a new user', async () => {
+    const res = await request(app)
+      .post('/register')
+      .send({ username: 'testuser', password: 'testpassword' });
+    expect(res.statusCode).toEqual(201);
+  });
+});
+
+describe('POST /login', () => {
+  it('should login an existing user', async () => {
+    await request(app)
+      .post('/register')
+      .send({ username: 'testuser', password: 'testpassword' });
+    const res = await request(app)
+      .post('/login')
+      .send({ username: 'testuser', password: 'testpassword' });
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toHaveProperty('token');
   });
 });
 EOL
@@ -240,6 +420,12 @@ npm run lint
 - [ESLint](https://eslint.org/) - Linting utility
 - [Helmet](https://helmetjs.github.io/) - Security middleware
 - [Cors](https://github.com/expressjs/cors) - Middleware to enable CORS
+- [Mongoose](https://mongoosejs.com/) - MongoDB object modeling tool
+- [jsonwebtoken](https://github.com/auth0/node-jsonwebtoken) - JWT authentication
+- [bcryptjs](https://github.com/dcodeIO/bcrypt.js) - Password hashing
+- [joi](https://joi.dev/) - Object schema validation
+- [Swagger](https://swagger.io/) - API documentation tool
+- [express-rate-limit](https://www.npmjs.com/package/express-rate-limit) - Rate limiting middleware
 
 ## Authors
 
