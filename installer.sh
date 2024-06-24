@@ -1,54 +1,80 @@
 #!/bin/bash
 
+# Function to check if a command exists
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
 # Check if Node.js is installed
-if ! [ -x "$(command -v node)" ]; then
+if ! command_exists node; then
   echo 'Error: Node.js is not installed. Please install Node.js (https://nodejs.org/)' >&2
   exit 1
 fi
 
 # Check if npm is installed
-if ! [ -x "$(command -v npm)" ]; then
+if ! command_exists npm; then
   echo 'Error: npm is not installed. Please install npm (https://www.npmjs.com/)' >&2
   exit 1
 fi
 
-# Check if directory already exists
-if [ -d "my-express-app" ]; then
-  echo "Error: Directory my-express-app already exists. Please choose a different name or remove the existing directory." >&2
+# Check if MongoDB is installed
+if ! command_exists mongod; then
+  echo 'Error: MongoDB is not installed or not in PATH. Please install MongoDB (https://www.mongodb.com/)' >&2
   exit 1
 fi
 
+# Function to handle directory existence
+create_directory() {
+  if [ -d "$1" ]; then
+    echo "Error: Directory $1 already exists. Please choose a different name or remove the existing directory." >&2
+    exit 1
+  fi
+  mkdir -p "$1"
+}
+
 # Create a new directory for the project
-mkdir my-express-app
-cd my-express-app
+create_directory "my-express-app"
+cd "my-express-app" || exit 1
 
 # Initialize npm project
 npm init -y
 
-# Install Express.js and other dependencies
+# Install dependencies
 npm install express body-parser dotenv helmet cors mongoose jsonwebtoken bcryptjs joi swagger-ui-express express-rate-limit
 
-# Install development dependencies
+# Install dev dependencies
 npm install --save-dev nodemon jest supertest eslint
 
-# Create directories and initial files
-mkdir -p src/routes src/config src/middleware src/controllers src/tests src/models src/docs
-touch src/index.js src/routes/index.js src/config/config.js src/middleware/logger.js src/middleware/errorHandler.js src/controllers/homeController.js src/controllers/authController.js src/tests/index.test.js src/models/user.js src/config/validateEnv.js src/docs/swagger.js
+# Create project structure
+create_directory "src"
+create_directory "src/routes"
+create_directory "src/config"
+create_directory "src/middleware"
+create_directory "src/controllers"
+create_directory "src/tests"
+create_directory "src/models"
+create_directory "src/docs"
 
-# Create a .env file (template)
+# Create initial files
+touch src/index.js src/routes/index.js src/config/config.js \
+      src/middleware/logger.js src/middleware/errorHandler.js \
+      src/controllers/homeController.js src/controllers/authController.js \
+      src/tests/index.test.js src/models/user.js src/config/validateEnv.js \
+      src/docs/swagger.js
+
+# Create .env files
 touch .env .env.example
-echo "PORT=3000" >> .env.example
-echo "NODE_ENV=development" >> .env.example
-echo "MONGO_URI=mongodb://localhost:27017/my-express-app" >> .env.example
-echo "JWT_SECRET=your_jwt_secret" >> .env.example
+echo "PORT=3000" >>.env.example
+echo "NODE_ENV=development" >>.env.example
+echo "MONGO_URI=mongodb://localhost:27017/my-express-app" >>.env.example
+echo "JWT_SECRET=your_jwt_secret" >>.env.example
 cp .env.example .env
 
-# Add basic Express server setup to src/index.js
+# Populate src/index.js with basic setup
 cat <<EOL > src/index.js
 const express = require('express');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
-const morgan = require('morgan');
 const helmet = require('helmet');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -65,16 +91,19 @@ dotenv.config();
 validateEnv();
 
 const app = express();
-const port = config.port;
+const port = config.PORT || 3000;
 
 // Database connection
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-}).then(() => {
+})
+.then(() => {
   console.log('Connected to MongoDB');
-}).catch((err) => {
+})
+.catch((err) => {
   console.error('Error connecting to MongoDB:', err.message);
+  process.exit(1);
 });
 
 // Security middlewares
@@ -87,7 +116,6 @@ app.use(rateLimit({
 
 // Middleware
 app.use(bodyParser.json());
-app.use(morgan('dev'));
 app.use(logger);
 
 // API documentation
@@ -102,11 +130,9 @@ app.use(errorHandler);
 app.listen(port, () => {
   console.log(\`Server is running on port \${port}\`);
 });
-
-module.exports = app;
 EOL
 
-# Add basic route setup to src/routes/index.js
+# Populate src/routes/index.js with basic route setup
 cat <<EOL > src/routes/index.js
 const express = require('express');
 const homeController = require('../controllers/homeController');
@@ -121,7 +147,7 @@ router.post('/register', authController.register);
 module.exports = router;
 EOL
 
-# Add basic controller setup to src/controllers/homeController.js
+# Populate src/controllers/homeController.js with basic controller setup
 cat <<EOL > src/controllers/homeController.js
 const getHome = (req, res) => {
   res.send('Hello World!');
@@ -130,7 +156,7 @@ const getHome = (req, res) => {
 module.exports = { getHome };
 EOL
 
-# Add auth controller to src/controllers/authController.js
+# Populate src/controllers/authController.js with basic auth controller setup
 cat <<EOL > src/controllers/authController.js
 const User = require('../models/user');
 const bcrypt = require('bcryptjs');
@@ -144,6 +170,7 @@ const register = async (req, res) => {
     await user.save();
     res.status(201).send('User registered successfully');
   } catch (err) {
+    console.error('Error registering user:', err.message);
     res.status(500).send('Error registering user');
   }
 };
@@ -158,6 +185,7 @@ const login = async (req, res) => {
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.status(200).json({ token });
   } catch (err) {
+    console.error('Error logging in:', err.message);
     res.status(500).send('Error logging in');
   }
 };
@@ -165,7 +193,7 @@ const login = async (req, res) => {
 module.exports = { register, login };
 EOL
 
-# Add user model to src/models/user.js
+# Populate src/models/user.js with basic user model setup
 cat <<EOL > src/models/user.js
 const mongoose = require('mongoose');
 
@@ -179,7 +207,7 @@ const User = mongoose.model('User', userSchema);
 module.exports = User;
 EOL
 
-# Add environment variable validation to src/config/validateEnv.js
+# Populate src/config/validateEnv.js with environment variable validation setup
 cat <<EOL > src/config/validateEnv.js
 const Joi = require('joi');
 
@@ -190,15 +218,15 @@ const envSchema = Joi.object({
   JWT_SECRET: Joi.string().required(),
 }).unknown().required();
 
-const { error, value } = envSchema.validate(process.env);
+const { error, value: envVars } = envSchema.validate(process.env);
 if (error) {
-  throw new Error(\`Environment validation error: \${error.message}\`);
+  throw new Error(\`Config validation error: \${error.message}\`);
 }
 
-module.exports = value;
+module.exports = envVars;
 EOL
 
-# Add Swagger documentation setup to src/docs/swagger.js
+# Populate src/docs/swagger.js with basic Swagger documentation setup
 cat <<EOL > src/docs/swagger.js
 const swaggerDocument = {
   openapi: '3.0.0',
@@ -215,8 +243,11 @@ const swaggerDocument = {
           200: {
             description: 'Successful response',
             content: {
-              'application/json': {
-                example: 'Hello World!',
+              'text/plain': {
+                schema: {
+                  type: 'string',
+                  example: 'Hello World!',
+                },
               },
             },
           },
@@ -227,6 +258,7 @@ const swaggerDocument = {
       post: {
         summary: 'Login route',
         requestBody: {
+          required: true,
           content: {
             'application/json': {
               schema: {
@@ -257,6 +289,9 @@ const swaggerDocument = {
           401: {
             description: 'Invalid credentials',
           },
+          500: {
+            description: 'Internal Server Error',
+          },
         },
       },
     },
@@ -264,6 +299,7 @@ const swaggerDocument = {
       post: {
         summary: 'Register route',
         requestBody: {
+          required: true,
           content: {
             'application/json': {
               schema: {
@@ -282,8 +318,9 @@ const swaggerDocument = {
             description: 'User registered successfully',
           },
           500: {
-            description: 'Error registering user',
+            description: 'Internal Server Error',
           },
+        },
         },
       },
     },
@@ -293,7 +330,27 @@ const swaggerDocument = {
 module.exports = swaggerDocument;
 EOL
 
-# Add basic test setup to src/tests/index.test.js
+# Populate src/middleware/logger.js with basic logger middleware setup
+cat <<EOL > src/middleware/logger.js
+const logger = (req, res, next) => {
+  console.log(\`\${new Date().toISOString()} - \${req.method} \${req.originalUrl} - \${req.ip}\`);
+  next();
+};
+
+module.exports = { logger };
+EOL
+
+# Populate src/middleware/errorHandler.js with basic error handling middleware setup
+cat <<EOL > src/middleware/errorHandler.js
+const errorHandler = (err, req, res, next) => {
+  console.error(\`Error: \${err.message}\`);
+  res.status(500).send('Internal Server Error');
+};
+
+module.exports = errorHandler;
+EOL
+
+# Populate src/tests/index.test.js with basic test setup
 cat <<EOL > src/tests/index.test.js
 const request = require('supertest');
 const app = require('../index');
@@ -334,7 +391,7 @@ describe('POST /login', () => {
 });
 EOL
 
-# Add ESLint configuration
+# Create ESLint configuration file
 cat <<EOL > .eslintrc.json
 {
   "env": {
@@ -357,13 +414,13 @@ cat <<EOL > .eslintrc.json
 }
 EOL
 
-# Add start, dev, test, and lint scripts to package.json
+# Update package.json scripts for start, dev, test, and lint
 npm set-script start "node src/index.js"
 npm set-script dev "nodemon src/index.js"
 npm set-script test "jest --coverage"
 npm set-script lint "eslint 'src/**/*.js'"
 
-# Create a README.md file
+# Create README.md file
 cat <<EOL > README.md
 # My Express App
 
@@ -375,31 +432,38 @@ This is a simple Express.js project.
 
 - Node.js
 - npm
+- MongoDB
 
-### Installing
+### Installation
 
-1. Clone the repo
+1. Clone the repository:
    \`\`\`
    git clone https://github.com/yourusername/my-express-app.git
+   cd my-express-app
    \`\`\`
-2. Install NPM packages
+
+2. Install dependencies:
    \`\`\`
    npm install
    \`\`\`
 
-### Running the server
+3. Set up environment variables:
+   - Create a \`.env\` file based on \`.env.example\`.
+   - Adjust MongoDB URI and JWT Secret in \`.env\`.
 
-- Development mode
+### Running the Server
+
+- Development mode (with nodemon):
   \`\`\`
   npm run dev
   \`\`\`
 
-- Production mode
+- Production mode:
   \`\`\`
   npm start
   \`\`\`
 
-### Running tests
+### Running Tests
 
 \`\`\`
 npm test
@@ -413,42 +477,46 @@ npm run lint
 
 ## Built With
 
-- [Express](https://expressjs.com/) - The web framework used
-- [Nodemon](https://nodemon.io/) - Used for development to automatically restart the server
-- [Jest](https://jestjs.io/) - Testing framework
-- [Supertest](https://github.com/visionmedia/supertest) - HTTP assertions for testing
-- [ESLint](https://eslint.org/) - Linting utility
-- [Helmet](https://helmetjs.github.io/) - Security middleware
-- [Cors](https://github.com/expressjs/cors) - Middleware to enable CORS
+- [Express](https://expressjs.com/) - Fast, unopinionated, minimalist web framework for Node.js
+- [MongoDB](https://www.mongodb.com/) - NoSQL database
 - [Mongoose](https://mongoosejs.com/) - MongoDB object modeling tool
-- [jsonwebtoken](https://github.com/auth0/node-jsonwebtoken) - JWT authentication
-- [bcryptjs](https://github.com/dcodeIO/bcrypt.js) - Password hashing
-- [joi](https://joi.dev/) - Object schema validation
-- [Swagger](https://swagger.io/) - API documentation tool
-- [express-rate-limit](https://www.npmjs.com/package/express-rate-limit) - Rate limiting middleware
+- [jsonwebtoken](https://github.com/auth0/node-jsonwebtoken) - JSON Web Token implementation for Node.js
+- [bcryptjs](https://github.com/dcodeIO/bcrypt.js) - Password hashing library
+- [Joi](https://joi.dev/) - Object schema validation
+- [Swagger UI Express](https://www.npmjs.com/package/swagger-ui-express) - Swagger UI middleware for Express
+- [express-rate-limit](https://www.npmjs.com/package/express-rate-limit) - Rate limiting middleware for Express
+- [supertest](https://github.com/visionmedia/supertest) - HTTP assertions for testing
+- [Jest](https://jestjs.io/) - JavaScript Testing Framework
+- [nodemon](https://nodemon.io/) - Monitor for any changes in your source and automatically restart your server
 
 ## Authors
 
-- **Your Name** - *Initial work* - [YourGitHub](https://github.com/yourusername)
+- **Your Name** - [YourGitHub](https://github.com/yourusername)
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 EOL
 
-# Create a .gitignore file
+# Create .gitignore file
 cat <<EOL > .gitignore
 node_modules/
 .env
 coverage/
 EOL
 
-# Create a basic GitHub Actions CI configuration
+# Create GitHub Actions CI configuration
 mkdir -p .github/workflows
 cat <<EOL > .github/workflows/node.js.yml
 name: Node.js CI
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   build:
@@ -457,18 +525,24 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [14, 16, 18]
+        node-version:
+          - 14.x
+          - 16.x
+          - 18.x
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Use Node.js \${{ matrix.node-version }}
-      uses: actions/setup-node@v2
-      with:
-        node-version: \${{ matrix.node-version }}
-    - run: npm install
-    - run: npm run lint
-    - run: npm test
+      - uses: actions/checkout@v2
+      - name: Use Node.js \${{ matrix.node-version }}
+        uses: actions/setup-node@v2
+        with:
+          node-version: \${{ matrix.node-version }}
+      - run: npm install
+      - run: npm run lint
+      - run: npm test
 EOL
 
 # Completion message
-echo "Express.js starter pack installation complete. Run 'npm start' to start the server, 'npm run dev' to start the server with Nodemon, 'npm test' to run tests, or 'npm run lint' to lint the code."
+echo "Express.js starter pack installation complete."
+echo "Run 'npm start' to start the server, 'npm run dev' to start the server with nodemon,"
+echo "'npm test' to run tests, or 'npm run lint' to lint the code."
+      },
