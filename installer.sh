@@ -5,18 +5,6 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-# Check if Node.js and npm are installed
-if ! command_exists node || ! command_exists npm; then
-  echo 'Error: Node.js and npm are required. Please install Node.js (https://nodejs.org/)' >&2
-  exit 1
-fi
-
-# Check if MongoDB is installed and running
-if ! command_exists mongod; then
-  echo 'Error: MongoDB is not installed or not in PATH. Please install MongoDB (https://www.mongodb.com/)' >&2
-  exit 1
-fi
-
 # Function to create directory if not exists
 create_directory() {
   if [ -d "$1" ]; then
@@ -26,23 +14,6 @@ create_directory() {
     echo "Created directory: $1"
   fi
 }
-
-# Initialize project directory
-PROJECT_NAME="my-express-app"
-create_directory "$PROJECT_NAME"
-cd "$PROJECT_NAME" || exit 1
-
-# Initialize npm project if not already initialized
-if [ ! -f package.json ]; then
-  npm init -y
-  echo "Initialized npm project."
-fi
-
-# Install necessary dependencies
-npm install express body-parser dotenv helmet cors mongoose jsonwebtoken bcryptjs joi swagger-ui-express express-rate-limit
-
-# Install dev dependencies
-npm install --save-dev nodemon jest supertest eslint
 
 # Function to create file if not exists
 create_file() {
@@ -54,54 +25,77 @@ create_file() {
   fi
 }
 
-# Create project structure
-create_directory "src"
-create_directory "src/routes"
-create_directory "src/config"
-create_directory "src/middleware"
-create_directory "src/controllers"
-create_directory "src/tests"
-create_directory "src/models"
-create_directory "src/docs"
+# Function to initialize npm project if not already initialized
+initialize_npm_project() {
+  if [ ! -f package.json ]; then
+    npm init -y
+    echo "Initialized npm project."
+  fi
+}
 
-# Create initial files
-create_file "src/index.js"
-create_file "src/routes/index.js"
-create_file "src/config/config.js"
-create_file "src/middleware/logger.js"
-create_file "src/middleware/errorHandler.js"
-create_file "src/controllers/homeController.js"
-create_file "src/controllers/authController.js"
-create_file "src/tests/index.test.js"
-create_file "src/models/user.js"
-create_file "src/config/validateEnv.js"
-create_file "src/docs/swagger.js"
+# Function to install dependencies
+install_dependencies() {
+  npm install express body-parser dotenv helmet cors mongoose jsonwebtoken bcryptjs joi swagger-ui-express express-rate-limit --save
+}
 
-# Create .env files
-create_file ".env"
-create_file ".env.example"
+# Function to install dev dependencies
+install_dev_dependencies() {
+  npm install --save-dev nodemon jest supertest eslint
+}
 
-# Populate .env.example if not already populated
-if [ ! -s .env.example ]; then
-  echo "PORT=3000" >>.env.example
-  echo "NODE_ENV=development" >>.env.example
-  echo "MONGO_URI=mongodb://localhost:27017/$PROJECT_NAME" >>.env.example
-  echo "JWT_SECRET=your_jwt_secret" >>.env.example
-  echo "Created file: .env.example"
-else
-  echo "File '.env.example' already exists and is not empty. Skipping population."
-fi
+# Function to set up project structure
+setup_project_structure() {
+  create_directory "src"
+  create_directory "src/routes"
+  create_directory "src/config"
+  create_directory "src/middleware"
+  create_directory "src/controllers"
+  create_directory "src/tests"
+  create_directory "src/models"
+  create_directory "src/docs"
+}
 
-# Populate .env if not already populated
-if [ ! -s .env ]; then
-  cp .env.example .env
-  echo "Created file: .env"
-else
-  echo "File '.env' already exists and is not empty. Skipping population."
-fi
+# Function to populate initial files
+populate_initial_files() {
+  create_file "src/index.js"
+  create_file "src/routes/index.js"
+  create_file "src/config/config.js"
+  create_file "src/middleware/logger.js"
+  create_file "src/middleware/errorHandler.js"
+  create_file "src/controllers/homeController.js"
+  create_file "src/controllers/authController.js"
+  create_file "src/tests/index.test.js"
+  create_file "src/models/user.js"
+  create_file "src/config/validateEnv.js"
+  create_file "src/docs/swagger.js"
+}
 
-# Populate src/index.js with basic setup
-cat <<EOL > src/index.js
+# Function to set up environment files
+setup_environment_files() {
+  create_file ".env"
+  create_file ".env.example"
+
+  if [ ! -s .env.example ]; then
+    echo "PORT=3000" >> .env.example
+    echo "NODE_ENV=development" >> .env.example
+    echo "MONGO_URI=mongodb://localhost:27017/my-express-app" >> .env.example
+    echo "JWT_SECRET=your_jwt_secret" >> .env.example
+    echo "Created file: .env.example"
+  else
+    echo "File '.env.example' already exists and is not empty. Skipping population."
+  fi
+
+  if [ ! -s .env ]; then
+    cp .env.example .env
+    echo "Created file: .env"
+  else
+    echo "File '.env' already exists and is not empty. Skipping population."
+  fi
+}
+
+# Function to set up initial Express app configuration
+setup_express_app() {
+  cat <<EOL > src/index.js
 const express = require('express');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
@@ -161,9 +155,11 @@ app.listen(port, () => {
   console.log(\`Server is running on port \${port}\`);
 });
 EOL
+}
 
-# Populate src/routes/index.js with basic route setup
-cat <<EOL > src/routes/index.js
+# Function to set up initial routes
+setup_initial_routes() {
+  cat <<EOL > src/routes/index.js
 const express = require('express');
 const homeController = require('../controllers/homeController');
 const authController = require('../controllers/authController');
@@ -176,18 +172,22 @@ router.post('/register', authController.register);
 
 module.exports = router;
 EOL
+}
 
-# Populate src/controllers/homeController.js with basic controller setup
-cat <<EOL > src/controllers/homeController.js
+# Function to set up initial home controller
+setup_home_controller() {
+  cat <<EOL > src/controllers/homeController.js
 const getHome = (req, res) => {
   res.send('Hello World!');
 };
 
 module.exports = { getHome };
 EOL
+}
 
-# Populate src/controllers/authController.js with basic auth controller setup
-cat <<EOL > src/controllers/authController.js
+# Function to set up initial auth controller
+setup_auth_controller() {
+  cat <<EOL > src/controllers/authController.js
 const User = require('../models/user');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -223,9 +223,11 @@ const login = async (req, res) => {
 
 module.exports = { register, login };
 EOL
+}
 
-# Populate src/models/user.js with basic user model setup
-cat <<EOL > src/models/user.js
+# Function to set up initial user model
+setup_user_model() {
+  cat <<EOL > src/models/user.js
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
@@ -237,9 +239,11 @@ const User = mongoose.model('User', userSchema);
 
 module.exports = User;
 EOL
+}
 
-# Populate src/config/validateEnv.js with environment variable validation setup
-cat <<EOL > src/config/validateEnv.js
+# Function to set up initial environment validation
+setup_env_validation() {
+  cat <<EOL > src/config/validateEnv.js
 const Joi = require('joi');
 
 const envSchema = Joi.object({
@@ -256,9 +260,11 @@ if (error) {
 
 module.exports = envVars;
 EOL
+}
 
-# Populate src/docs/swagger.js with basic Swagger documentation setup
-cat <<EOL > src/docs/swagger.js
+# Function to set up initial Swagger documentation
+setup_swagger_docs() {
+  cat <<EOL > src/docs/swagger.js
 const swaggerDocument = {
   openapi: '3.0.0',
   info: {
@@ -309,59 +315,24 @@ const swaggerDocument = {
             content: {
               'application/json': {
                 schema: {
-                      type: 'object',
-                      properties: {
-                        token: { type: 'string' },
-                      },
-                    },
-                    example: {
-                      token: 'your_jwt_token_here',
-                    },
+                  type: 'object',
+                  properties: {
+                    token: { type: 'string' },
+                  },
+                  example: {
+                    token: 'your_jwt_token_here',
                   },
                 },
               },
-              400: {
-                description: 'Bad request',
-              },
-              401: {
-                description: 'Unauthorized',
-              },
-              500: {
-                description: 'Internal Server Error',
-              },
             },
-          },
-        },
-      },
-    },
-    '/register': {
-      post: {
-        summary: 'Register route',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  username: { type: 'string' },
-                  password: { type: 'string' },
-                },
-                required: ['username', 'password'],
-              },
-            },
-          },
-        },
-        responses: {
-          201: {
-            description: 'Successful registration',
           },
           400: {
             description: 'Bad request',
           },
-          500: {
-            description: 'Internal Server Error',
-          },
+          401: {description: 'Unauthorized',
+        },
+        500: {
+          description: 'Internal Server Error',
         },
       },
     },
@@ -369,9 +340,12 @@ const swaggerDocument = {
 };
 
 module.exports = swaggerDocument;
+EOL
+}
 
-# Populate src/middleware/logger.js with basic logger middleware setup
-cat <<EOL > src/middleware/logger.js
+# Function to set up initial logger middleware
+setup_logger_middleware() {
+  cat <<EOL > src/middleware/logger.js
 const logger = (req, res, next) => {
   console.log(\`\${new Date().toISOString()} - \${req.method} \${req.originalUrl} - \${req.ip}\`);
   next();
@@ -379,9 +353,11 @@ const logger = (req, res, next) => {
 
 module.exports = { logger };
 EOL
+}
 
-# Populate src/middleware/errorHandler.js with basic error handling middleware setup
-cat <<EOL > src/middleware/errorHandler.js
+# Function to set up initial error handling middleware
+setup_error_handler_middleware() {
+  cat <<EOL > src/middleware/errorHandler.js
 const errorHandler = (err, req, res, next) => {
   console.error(\`Error: \${err.message}\`);
   res.status(500).send('Internal Server Error');
@@ -389,9 +365,11 @@ const errorHandler = (err, req, res, next) => {
 
 module.exports = errorHandler;
 EOL
+}
 
-# Populate src/tests/index.test.js with basic test setup
-cat <<EOL > src/tests/index.test.js
+# Function to set up initial tests
+setup_initial_tests() {
+  cat <<EOL > src/tests/index.test.js
 const request = require('supertest');
 const app = require('../index');
 const mongoose = require('mongoose');
@@ -430,9 +408,11 @@ describe('POST /login', () => {
   });
 });
 EOL
+}
 
-# Create ESLint configuration file
-cat <<EOL > .eslintrc.json
+# Function to set up ESLint configuration
+setup_eslint_config() {
+  cat <<EOL > .eslintrc.json
 {
   "env": {
     "browser": true,
@@ -453,15 +433,19 @@ cat <<EOL > .eslintrc.json
   }
 }
 EOL
+}
 
-# Update package.json scripts for start, dev, test, and lint
-npm set-script start "node src/index.js"
-npm set-script dev "nodemon src/index.js"
-npm set-script test "jest --coverage"
-npm set-script lint "eslint 'src/**/*.js'"
+# Function to update package.json scripts
+update_package_json_scripts() {
+  npm set-script start "node src/index.js"
+  npm set-script dev "nodemon src/index.js"
+  npm set-script test "jest --coverage"
+  npm set-script lint "eslint 'src/**/*.js'"
+}
 
-# Create README.md file
-cat <<EOL > README.md
+# Function to create README.md file
+create_readme_file() {
+  cat <<EOL > README.md
 # My Express App
 
 This is a simple Express.js project.
@@ -537,17 +521,21 @@ npm run lint
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 EOL
+}
 
-# Create .gitignore file
-cat <<EOL > .gitignore
+# Function to create .gitignore file
+create_gitignore_file() {
+  cat <<EOL > .gitignore
 node_modules/
 .env
 coverage/
 EOL
+}
 
-# Create GitHub Actions CI configuration
-mkdir -p .github/workflows
-cat <<EOL > .github/workflows/node.js.yml
+# Function to create GitHub Actions CI configuration
+create_github_actions_config() {
+  mkdir -p .github/workflows
+  cat <<EOL > .github/workflows/node.js.yml
 name: Node.js CI
 
 on:
@@ -580,8 +568,49 @@ jobs:
       - run: npm run lint
       - run: npm test
 EOL
+}
 
-# Completion message
-echo "Express.js starter pack installation complete."
-echo "Run 'npm start' to start the server, 'npm run dev' to start the server with nodemon,"
-echo "'npm test' to run tests, or 'npm run lint' to lint the code."
+# Main function to execute all setup functions
+main() {
+  command_exists node || {
+    echo 'Error: Node.js is required. Please install Node.js (https://nodejs.org/)' >&2
+    exit 1
+  }
+
+  command_exists npm || {
+    echo 'Error: npm is required. Please install npm (https://www.npmjs.com/)' >&2
+    exit 1
+  }
+
+  create_directory "my-express-app"
+  cd "my-express-app" || exit 1
+
+  initialize_npm_project
+  install_dependencies
+  install_dev_dependencies
+  setup_project_structure
+  populate_initial_files
+  setup_environment_files
+  setup_express_app
+  setup_initial_routes
+  setup_home_controller
+  setup_auth_controller
+  setup_user_model
+  setup_env_validation
+  setup_swagger_docs
+  setup_logger_middleware
+  setup_error_handler_middleware
+  setup_initial_tests
+  setup_eslint_config
+  update_package_json_scripts
+  create_readme_file
+  create_gitignore_file
+  create_github_actions_config
+
+  echo "Express.js starter pack installation complete."
+  echo "Run 'npm start' to start the server, 'npm run dev' to start the server with nodemon,"
+  echo "'npm test' to run tests, or 'npm run lint' to lint the code."
+}
+
+# Execute main function
+main
