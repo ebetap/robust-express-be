@@ -545,4 +545,3 @@ EOL
 echo "Express.js starter pack installation complete."
 echo "Run 'npm start' to start the server, 'npm run dev' to start the server with nodemon,"
 echo "'npm test' to run tests, or 'npm run lint' to lint the code."
-      },
