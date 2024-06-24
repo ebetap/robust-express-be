@@ -35,14 +35,14 @@ initialize_npm_project() {
   fi
 }
 
-# Function to install dependencies
+# Function to install dependencies with specific versions
 install_dependencies() {
-  npm install express body-parser dotenv helmet cors mongoose jsonwebtoken bcryptjs joi swagger-ui-express express-rate-limit --save
+  npm install express@^4.17.1 body-parser@^1.19.0 dotenv@^10.0.0 helmet@^4.6.0 cors@^2.8.5 mongoose@^6.2.1 jsonwebtoken@^8.5.1 bcryptjs@^2.4.3 joi@^17.4.0 swagger-ui-express@^4.1.6 express-rate-limit@^5.2.6 --save
 }
 
-# Function to install dev dependencies
+# Function to install dev dependencies with specific versions
 install_dev_dependencies() {
-  npm install --save-dev nodemon jest supertest eslint
+  npm install --save-dev nodemon@^2.0.15 jest@^27.4.7 supertest@^6.2.0 eslint@^8.3.0
 }
 
 # Function to set up project structure
@@ -72,7 +72,7 @@ populate_initial_files() {
   create_file "src/docs/swagger.js"
 }
 
-# Function to set up environment files
+# Function to set up environment files for multiple environments
 setup_environment_files() {
   create_file ".env"
   create_file ".env.example"
@@ -95,7 +95,7 @@ setup_environment_files() {
   fi
 }
 
-# Function to set up initial Express app configuration
+# Function to set up initial Express app configuration with security enhancements
 setup_express_app() {
   local index_file="src/index.js"
   cat <<EOL > "$index_file"
@@ -135,7 +135,16 @@ mongoose.connect(process.env.MONGO_URI, {
 });
 
 // Security middlewares
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+    },
+  },
+}));
 app.use(cors());
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -161,7 +170,7 @@ app.listen(port, () => {
 EOL
 }
 
-# Function to set up initial routes
+# Function to set up initial routes with automated API documentation updates
 setup_initial_routes() {
   local routes_file="src/routes/index.js"
   cat <<EOL > "$routes_file"
@@ -269,7 +278,6 @@ const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role: { type: String, enum: ['user', 'admin'], default: 'user' } // Role-based access control
-});
 
 const User = mongoose.model('User', userSchema);
 
@@ -277,7 +285,7 @@ module.exports = User;
 EOL
 }
 
-# Function to set up initial environment validation (continued)
+# Function to set up initial environment validation
 setup_env_validation() {
   local env_validation="src/config/validateEnv.js"
   cat <<EOL > "$env_validation"
@@ -489,6 +497,7 @@ seed_database() {
   cat <<EOL > "$seed_file"
 const mongoose = require('mongoose');
 const User = require('../models/user');
+const bcrypt = require('bcryptjs');
 
 const seedData = async () => {
   await mongoose.connect(process.env.MONGO_URI, {
@@ -496,14 +505,19 @@ const seedData = async () => {
     useUnifiedTopology: true,
   });
 
-  const admin = new User({
-    username: 'admin',
-    password: await bcrypt.hash('adminpassword', 10),
-    role: 'admin',
-  });
+  const adminExists = await User.exists({ username: 'admin' });
+  if (!adminExists) {
+    const admin = new User({
+      username: 'admin',
+      password: await bcrypt.hash('adminpassword', 10),
+      role: 'admin',
+    });
 
-  await admin.save();
-  console.log('Admin user created');
+    await admin.save();
+    console.log('Admin user created');
+  } else {
+    console.log('Admin user already exists');
+  }
 
   mongoose.connection.close();
 };
@@ -587,9 +601,21 @@ jobs:
 EOL
 }
 
-# Function to complete the setup
-complete_setup() {
-  echo "Setup completed successfully!"
+# Function to implement logging of requests and errors
+implement_request_error_logging() {
+  # Add logging middleware to the Express setup
+  local logger_file="src/middleware/logger.js"
+  cat <<EOL > "$logger_file"
+const logger = (req, res, next) => {
+  console.log(\`[\${new Date().toISOString()}] \${req.method} \${req.url}\`);
+  next();
+};
+
+module.exports = { logger };
+EOL
+
+  # Update Dockerfile to include the logger middleware
+  sed -i 's#CMD \["node", "src/index.js"\]#CMD ["node", "-r", "./src/middleware/logger.js", "src/index.js"]#' Dockerfile
 }
 
 # Main function to execute setup steps
@@ -614,7 +640,8 @@ main() {
   setup_dockerfile
   setup_docker_compose
   setup_github_actions
-  complete_setup
+  implement_request_error_logging
+  echo "Setup completed successfully!"
 }
 
 # Execute the main function
