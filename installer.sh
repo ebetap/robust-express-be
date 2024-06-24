@@ -46,7 +46,8 @@ install_dependencies() {
 # Function to install dev dependencies with specific versions
 install_dev_dependencies() {
   npm install --save-dev nodemon@^2.0.15 jest@^27.4.7 supertest@^6.2.0 eslint@^8.3.0 eslint-config-airbnb-base@^16.1.0 \
-    eslint-plugin-import@^2.25.2 eslint-plugin-node@^11.1.0 eslint-plugin-jest@^25.1.0 @types/jest@^27.0.3
+    eslint-plugin-import@^2.25.2 eslint-plugin-node@^11.1.0 eslint-plugin-jest@^25.1.0 @types/jest@^27.0.3 \
+    helmet-csp@^4.4.0 prom-client@^15.3.0 compression@^1.7.4 express-rate-limit@^5.2.6
 }
 
 # Function to set up project structure
@@ -132,6 +133,7 @@ const config = require('./config/config');
 const swaggerDocument = require('./docs/swagger');
 const validateEnv = require('./config/validateEnv');
 const { authenticateJWT } = require('./middleware/authenticate');
+const helmetCsp = require('helmet-csp');
 
 dotenv.config();
 validateEnv();
@@ -157,13 +159,14 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // Security middlewares
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-    },
+  contentSecurityPolicy: false,
+}));
+app.use(helmetCsp({
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+    styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+    fontSrc: ["'self'", 'https://fonts.gstatic.com'],
   },
 }));
 app.use(cors());
@@ -254,66 +257,97 @@ EOL
 setup_auth_controller() {
   local auth_controller="src/controllers/authController.js"
   cat <<EOL > "$auth_controller"
-const User = require('../models/user');
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
-const { JWT_SECRET, MAILER_EMAIL, MAILER_PASSWORD } = process.env;
+const bcrypt = require('bcryptjs');
+const User = require('../models/user');
+const config = require('../config/config');
 
-const generateAccessToken = (userId) => {
-  return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '15m' });
-};
+const login = async (req, res) => {
+  const { email, password } = req.body;
 
-const generateRefreshToken = (userId) => {
-  return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' });
-};
-
-const register = async (req, res) => {
   try {
-    const { username, password } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ username, password: hashedPassword });
-    await user.save();
-    res.status(201).send('User registered successfully');
-  } catch (err) {
-    console.error('Error registering user:', err.message);
-    res.status(500).send('Error registering user');
+    // Check if user exists
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if password is correct
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Generate access token
+    const accessToken = jwt.sign({ id: user._id }, config.JWT_SECRET, {
+      expiresIn: '15m',
+    });
+
+    // Generate refresh token (stored in cookie)
+    const refreshToken = jwt.sign({ id: user._id }, config.JWT_SECRET, {
+      expiresIn: '7d',
+    });
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      secure: process.env.NODE_ENV === 'production',
+    });
+
+    res.json({ accessToken });
+  } catch (error) {
+    console.error('Error logging in:', error.message);
+    res.status(500).json({ message: 'Internal server error' });
   }
 };
 
-const login = async (req, res) => {
+const register = async (req, res) => {
+  const { email, password } = req.body;
+
   try {
-    const { username, password } = req.body;
-    const user = await User.findOne({ username });
-    if (!user || !await bcrypt.compare(password, user.password)) {
-      return res.status(401).send('Invalid credentials');
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
     }
-    const accessToken = generateAccessToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-    res.status(200).json({ accessToken, refreshToken });
-  } catch (err) {
-    console.error('Error logging in:', err.message);
-    res.status(500).send('Error logging in');
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create new user
+    const newUser = new User({ email, password: hashedPassword });
+    await newUser.save();
+
+    res.status(201).json({ message: 'User registered successfully' });
+  } catch (error) {
+    console.error('Error registering user:', error.message);
+    res.status(500).json({ message: 'Internal server error' });
   }
 };
 
 const refreshToken = async (req, res) => {
-  const { refreshToken } = req.body;
-  if (!refreshToken) {
-    return res.status(401).send('Refresh token is required');
+  const token = req.cookies.refreshToken;
+
+  if (!token) {
+    return res.status(401).json({ message: 'Refresh token not found' });
   }
+
   try {
-    jwt.verify(refreshToken, JWT_SECRET);
-    const decoded = jwt.decode(refreshToken);
-    const accessToken = generateAccessToken(decoded.id);
-    res.status(200).json({ accessToken });
-  } catch (err) {
-    console.error('Error refreshing token:', err.message);
-    res.status(403).send('Invalid refresh token');
+    // Verify refresh token
+    const decoded = jwt.verify(token, config.JWT_SECRET);
+
+    // Generate new access token
+    const accessToken = jwt.sign({ id: decoded.id }, config.JWT_SECRET, {
+      expiresIn: '15m',
+    });
+
+    res.json({ accessToken });
+  } catch (error) {
+    console.error('Error refreshing token:', error.message);
+    res.status(403).json({ message: 'Invalid refresh token' });
   }
 };
 
-module.exports = { register, login, refreshToken };
+module.exports = { login, register, refreshToken };
 EOL
 }
 
@@ -324,9 +358,8 @@ setup_user_model() {
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { type: String, enum: ['user', 'admin'], default: 'user' } // Role-based access control
 });
 
 const User = mongoose.model('User', userSchema);
@@ -335,182 +368,27 @@ module.exports = User;
 EOL
 }
 
-# Function to set up initial environment validation
-setup_env_validation() {
-  local env_validation="src/config/validateEnv.js"
-  cat <<EOL > "$env_validation"
-const Joi = require('joi');
-
-const envSchema = Joi.object({
-  PORT: Joi.number().default(3000),
-  NODE_ENV: Joi.string().valid('development', 'production').default('development'),
-  MONGO_URI: Joi.string().required(),
-  JWT_SECRET: Joi.string().required(),
-  CSRF_SECRET: Joi.string().required(),
-  MAILER_EMAIL: Joi.string().email().required(),
-  MAILER_PASSWORD: Joi.string().required(),
-}).unknown().required();
-
-const { error, value: envVars } = envSchema.validate(process.env);
-if (error) {
-  throw new Error(\`Config validation error: \${error.message}\`);
-}
-
-module.exports = envVars;
-EOL
-}
-
-# Function to set up initial Swagger documentation
-setup_swagger_docs() {
-  local swagger_docs="src/docs/swagger.js"
-  cat <<EOL > "$swagger_docs"
-const swaggerDocument = {
-  openapi: '3.0.0',
-  info: {
-    title: 'Express API Documentation',
-    version: '1.0.0',
-    description: 'API Documentation for Express App',
-  },
-  servers: [
-    {
-      url: 'http://localhost:3000',
-      description: 'Development Server',
-    },
-  ],
-  paths: {
-    '/': {
-      get: {
-        summary: 'Home endpoint',
-        responses: {
-          '200': {
-            description: 'Successful response',
-          },
-        },
-      },
-    },
-    '/login': {
-      post: {
-        summary: 'Login endpoint',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  username: {
-                    type: 'string',
-                  },
-                  password: {
-                    type: 'string',
-                  },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: 'Successful login',
-          },
-          '401': {
-            description: 'Invalid credentials',
-          },
-        },
-      },
-    },
-    '/register': {
-      post: {
-        summary: 'Register endpoint',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  username: {
-                    type: 'string',
-                  },
-                  password: {
-                    type: 'string',
-                  },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          '201': {
-            description: 'User registered successfully',
-          },
-          '500': {
-            description: 'Error registering user',
-          },
-        },
-      },
-    },
-    '/refresh-token': {
-      post: {
-        summary: 'Refresh token endpoint',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  refreshToken: {
-                    type: 'string',
-                  },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: 'Token refreshed successfully',
-          },
-          '401': {
-            description: 'Refresh token is required',
-          },
-          '403': {
-            description: 'Invalid refresh token',
-          },
-        },
-      },
-    },
-  },
-};
-
-module.exports = swaggerDocument;
-EOL
-}
-
-# Function to set up JWT authentication middleware
-setup_jwt_middleware() {
-  local jwt_middleware="src/middleware/authenticate.js"
-  cat <<EOL > "$jwt_middleware"
+# Function to set up initial middleware for authentication
+setup_authentication_middleware() {
+  local authenticate_middleware="src/middleware/authenticate.js"
+  cat <<EOL > "$authenticate_middleware"
 const jwt = require('jsonwebtoken');
-const { JWT_SECRET } = process.env;
+const config = require('../config/config');
 
 const authenticateJWT = (req, res, next) => {
-  const authHeader = req.headers.authorization;
+  const token = req.headers.authorization?.split(' ')[1];
 
-  if (authHeader) {
-    const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
 
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-      if (err) {
-        return res.sendStatus(403);
-      }
-
-      req.user = user;
-      next();
-    });
-  } else {
-    res.sendStatus(401);
+  try {
+    const decoded = jwt.verify(token, config.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    console.error('Error authenticating JWT:', error.message);
+    return res.status(403).json({ message: 'Invalid token' });
   }
 };
 
@@ -518,126 +396,23 @@ module.exports = { authenticateJWT };
 EOL
 }
 
-# Function to set up initial error handling middleware
-setup_error_handler() {
+# Function to set up initial error handler middleware
+setup_error_handler_middleware() {
   local error_handler="src/middleware/errorHandler.js"
   cat <<EOL > "$error_handler"
 const errorHandler = (err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).send('Something broke!');
+  res.status(500).json({ message: 'Internal server error' });
 };
 
 module.exports = errorHandler;
 EOL
 }
 
-# Function to set up logging middleware
-setup_logger() {
-  local logger="src/middleware/logger.js"
-  cat <<EOL > "$logger"
-const logger = (req, res, next) => {
-  console.log(\`\${req.method} \${req.url}\`);
-  next();
-};
-
-module.exports = { logger };
-EOL
-}
-
-# Function to seed the database with initial data
-seed_database() {
-  local seed_file="src/config/seed.js"
-  cat <<EOL > "$seed_file"
-const mongoose = require('mongoose');
-const User = require('../models/user');
-const bcrypt = require('bcryptjs');
-
-const seedData = async () => {
-  await mongoose.connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  });
-
-  const adminExists = await User.exists({ username: 'admin' });
-  if (!adminExists) {
-    const admin = new User({
-      username: 'admin',
-      password: await bcrypt.hash('adminpassword', 10),
-      role: 'admin',
-    });
-
-    await admin.save();
-    console.log('Admin user created');
-  } else {
-    console.log('Admin user already exists');
-  }
-
-  mongoose.connection.close();
-};
-
-seedData().catch(err => console.error(err));
-EOL
-}
-
-# Function to set up Dockerfile
-setup_dockerfile() {
-  cat <<EOL > Dockerfile
-FROM node:14
-
-WORKDIR /usr/src/app
-
-COPY package*.json ./
-
-RUN npm install
-
-COPY . .
-
-EXPOSE 3000
-CMD ["node", "src/index.js"]
-EOL
-}
-
-# Function to set up Docker Compose
-setup_docker_compose() {
-  cat <<EOL > docker-compose.yml
-version: '3.8'
-
-services:
-  app:
-    build: .
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
-    depends_on:
-      - mongo
-  mongo:
-    image: mongo:4.2
-    ports:
-      - "27017:27017"
-EOL
-}
-
-# Function to set up initial Jest testing configuration
-setup_jest_config() {
-  cat <<EOL > jest.config.js
-module.exports = {
-  testEnvironment: 'node',
-  verbose: true,
-  testPathIgnorePatterns: [
-    '/node_modules/',
-  ],
-  coveragePathIgnorePatterns: [
-    '/node_modules/',
-  ],
-};
-EOL
-}
-
-# Function to set up initial Jest test script
-setup_jest_tests() {
-  create_file "src/tests/home.test.js"
-  cat <<EOL > "src/tests/home.test.js"
+# Function to set up initial Jest test file
+setup_initial_tests() {
+  local tests_file="src/tests/index.test.js"
+  cat <<EOL > "$tests_file"
 const request = require('supertest');
 const app = require('../index');
 
@@ -645,13 +420,14 @@ describe('GET /', () => {
   it('should return 200 OK', async () => {
     const response = await request(app).get('/');
     expect(response.status).toBe(200);
+    expect(response.text).toBe('Hello World!');
   });
 });
 EOL
 }
 
-# Function to build the entire setup
-build_setup() {
+# Main function to call all setup functions
+setup_express_app_setup_script() {
   initialize_npm_project
   install_dependencies
   install_dev_dependencies
@@ -663,20 +439,12 @@ build_setup() {
   setup_home_controller
   setup_auth_controller
   setup_user_model
-  setup_env_validation
-  setup_swagger_docs
-  setup_jwt_middleware
-  setup_error_handler
-  setup_logger
-  seed_database
-  setup_dockerfile
-  setup_docker_compose
-  setup_jest_config
-  setup_jest_tests
+  setup_authentication_middleware
+  setup_error_handler_middleware
+  setup_initial_tests
+
+  echo "Express.js application setup script completed successfully."
 }
 
-# Execute the build_setup function to build the setup
-build_setup
-
-# Inform user that setup is complete
-echo "Setup script completed successfully."
+# Execute main function
+setup_express_app_setup_script
