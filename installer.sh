@@ -7,21 +7,23 @@ command_exists() {
 
 # Function to create directory if not exists
 create_directory() {
-  if [ -d "$1" ]; then
-    echo "Directory '$1' already exists. Skipping creation."
+  local dir="$1"
+  if [ -d "$dir" ]; then
+    echo "Directory '$dir' already exists. Skipping creation."
   else
-    mkdir -p "$1"
-    echo "Created directory: $1"
+    mkdir -p "$dir"
+    echo "Created directory: $dir"
   fi
 }
 
 # Function to create file if not exists
 create_file() {
-  if [ ! -f "$1" ]; then
-    touch "$1"
-    echo "Created file: $1"
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    touch "$file"
+    echo "Created file: $file"
   else
-    echo "File '$1' already exists. Skipping creation."
+    echo "File '$file' already exists. Skipping creation."
   fi
 }
 
@@ -95,7 +97,8 @@ setup_environment_files() {
 
 # Function to set up initial Express app configuration
 setup_express_app() {
-  cat <<EOL > src/index.js
+  local index_file="src/index.js"
+  cat <<EOL > "$index_file"
 const express = require('express');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
@@ -160,7 +163,8 @@ EOL
 
 # Function to set up initial routes
 setup_initial_routes() {
-  cat <<EOL > src/routes/index.js
+  local routes_file="src/routes/index.js"
+  cat <<EOL > "$routes_file"
 const express = require('express');
 const homeController = require('../controllers/homeController');
 const authController = require('../controllers/authController');
@@ -179,7 +183,8 @@ EOL
 
 # Function to set up initial home controller
 setup_home_controller() {
-  cat <<EOL > src/controllers/homeController.js
+  local home_controller="src/controllers/homeController.js"
+  cat <<EOL > "$home_controller"
 const getHome = (req, res) => {
   res.send('Hello World!');
 };
@@ -190,7 +195,8 @@ EOL
 
 # Function to set up initial auth controller with JWT authentication and refresh tokens
 setup_auth_controller() {
-  cat <<EOL > src/controllers/authController.js
+  local auth_controller="src/controllers/authController.js"
+  cat <<EOL > "$auth_controller"
 const User = require('../models/user');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -255,7 +261,8 @@ EOL
 
 # Function to set up initial user model
 setup_user_model() {
-  cat <<EOL > src/models/user.js
+  local user_model="src/models/user.js"
+  cat <<EOL > "$user_model"
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
@@ -270,9 +277,10 @@ module.exports = User;
 EOL
 }
 
-# Function to set up initial environment validation
+# Function to set up initial environment validation (continued)
 setup_env_validation() {
-  cat <<EOL > src/config/validateEnv.js
+  local env_validation="src/config/validateEnv.js"
+  cat <<EOL > "$env_validation"
 const Joi = require('joi');
 
 const envSchema = Joi.object({
@@ -293,7 +301,8 @@ EOL
 
 # Function to set up initial Swagger documentation
 setup_swagger_docs() {
-  cat <<EOL > src/docs/swagger.js
+  local swagger_docs="src/docs/swagger.js"
+  cat <<EOL > "$swagger_docs"
 const swaggerDocument = {
   openapi: '3.0.0',
   info: {
@@ -420,7 +429,8 @@ EOL
 
 # Function to set up JWT authentication middleware
 setup_jwt_middleware() {
-  cat <<EOL > src/middleware/authenticate.js
+  local jwt_middleware="src/middleware/authenticate.js"
+  cat <<EOL > "$jwt_middleware"
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = process.env;
 
@@ -449,7 +459,8 @@ EOL
 
 # Function to set up initial error handling middleware
 setup_error_handler() {
-  cat <<EOL > src/middleware/errorHandler.js
+  local error_handler="src/middleware/errorHandler.js"
+  cat <<EOL > "$error_handler"
 const errorHandler = (err, req, res, next) => {
   console.error(err.stack);
   res.status(500).send('Something broke!');
@@ -461,7 +472,8 @@ EOL
 
 # Function to set up logging middleware
 setup_logger() {
-  cat <<EOL > src/middleware/logger.js
+  local logger="src/middleware/logger.js"
+  cat <<EOL > "$logger"
 const logger = (req, res, next) => {
   console.log(\`\${req.method} \${req.url}\`);
   next();
@@ -473,7 +485,8 @@ EOL
 
 # Function to seed the database with initial data
 seed_database() {
-  cat <<EOL > src/config/seed.js
+  local seed_file="src/config/seed.js"
+  cat <<EOL > "$seed_file"
 const mongoose = require('mongoose');
 const User = require('../models/user');
 
