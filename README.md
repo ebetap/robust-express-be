@@ -326,4 +326,176 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/user');
 const config = require('../config/config');
 
-const login = async
+const login = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    // Check if user exists
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if password is correct
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Generate access token
+    const accessToken = jwt.sign({ id: user._id }, config.JWT_SECRET, {
+      expiresIn: '15m',
+    });
+
+    // Generate refresh token (stored in cookie)
+    const refreshToken = jwt.sign({ id: user._id }, config.JWT_SECRET, {
+      expiresIn: '7d',
+    });
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      secure: process.env.NODE_ENV === 'production',
+    });
+
+    res.json({ accessToken });
+  } catch (error) {
+    console.error('Error logging in:', error.message);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+const register = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create new user
+    const newUser = new User({ email, password: hashedPassword });
+    await newUser.save();
+
+    res.status(201).json({ message: 'User registered successfully' });
+  } catch (error) {
+    console.error('Error registering user:', error.message);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+const refreshToken = async (req, res) => {
+  const token = req.cookies.refreshToken;
+
+  if (!token) {
+    return res.status(401).json({ message: 'Refresh token not found' });
+  }
+
+  try {
+    // Verify refresh token
+    const decoded = jwt.verify(token, config.JWT_SECRET);
+
+    // Generate new access token
+    const accessToken = jwt.sign({ id: decoded.id }, config.JWT_SECRET, {
+      expiresIn: '15m',
+    });
+
+    res.json({ accessToken });
+  } catch (error) {
+    console.error('Error refreshing token:', error.message);
+    res.status(403).json({ message: 'Invalid refresh token' });
+  }
+};
+
+module.exports = { login, register, refreshToken };
+```
+
+### Models
+
+#### src/models/user.js
+Defines the user schema for MongoDB.
+
+**Full Code Example:**
+```javascript
+const mongoose = require('mongoose');
+
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+});
+
+const User = mongoose.model('User', userSchema);
+
+module.exports = User;
+```
+
+### Routes
+
+#### src/routes/index.js
+Sets up initial routes with controllers and authentication middleware.
+
+**Full Code Example:**
+```javascript
+const express = require('express');
+const homeController = require('../controllers/homeController');
+const authController = require('../controllers/authController');
+const { authenticateJWT } = require('../middleware/authenticate');
+
+const router = express.Router();
+
+router.get('/', homeController.getHome);
+router.post('/login', authController.login);
+router.post('/register', authController.register);
+router.post('/refresh-token', authController.refreshToken); // New endpoint for token refresh
+
+module.exports = router;
+```
+
+### Testing
+
+#### src/tests/index.test.js
+Initial Jest test file using Supertest for API testing.
+
+**Full Code Example:**
+```javascript
+const request = require('supertest');
+const app = require('../index');
+
+describe('GET /', () => {
+  it('should return 200 OK', async () => {
+    const response = await request(app).get('/');
+    expect(response.status).toBe(200);
+    expect(response.text).toBe('Hello World!');
+  });
+});
+```
+
+### Running the Application
+
+To run the application after setup, execute:
+```bash
+node src/index.js
+```
+
+### API Documentation
+
+API documentation is available at `/api-docs` using Swagger UI.
+
+### Security Considerations
+
+- **JWT Tokens**: Secure storage and transmission of JWT secrets and tokens.
+- **Helmet and CSP**: Configured to prevent various types of attacks.
+- **CSRF Protection**: Implemented to prevent cross-site request forgery.
+- **Rate Limiting**: Limits requests to prevent abuse.
+
+### Additional Notes
+
+- Ensure MongoDB is running and accessible.
+- Update environment variables in `.env` as per your deployment needs.
+- Customize middleware and controllers based on your application's requirements.
+
+This documentation provides a comprehensive guide to setting up and understanding the Express.js application configured through the setup script. Adjustments and enhancements can be made based on specific project needs and security requirements.
