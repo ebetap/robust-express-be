@@ -5,45 +5,54 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-# Check if Node.js is installed
-if ! command_exists node; then
-  echo 'Error: Node.js is not installed. Please install Node.js (https://nodejs.org/)' >&2
+# Check if Node.js and npm are installed
+if ! command_exists node || ! command_exists npm; then
+  echo 'Error: Node.js and npm are required. Please install Node.js (https://nodejs.org/)' >&2
   exit 1
 fi
 
-# Check if npm is installed
-if ! command_exists npm; then
-  echo 'Error: npm is not installed. Please install npm (https://www.npmjs.com/)' >&2
-  exit 1
-fi
-
-# Check if MongoDB is installed
+# Check if MongoDB is installed and running
 if ! command_exists mongod; then
   echo 'Error: MongoDB is not installed or not in PATH. Please install MongoDB (https://www.mongodb.com/)' >&2
   exit 1
 fi
 
-# Function to handle directory existence
+# Function to create directory if not exists
 create_directory() {
   if [ -d "$1" ]; then
-    echo "Error: Directory $1 already exists. Please choose a different name or remove the existing directory." >&2
-    exit 1
+    echo "Directory '$1' already exists. Skipping creation."
+  else
+    mkdir -p "$1"
+    echo "Created directory: $1"
   fi
-  mkdir -p "$1"
 }
 
-# Create a new directory for the project
-create_directory "my-express-app"
-cd "my-express-app" || exit 1
+# Initialize project directory
+PROJECT_NAME="my-express-app"
+create_directory "$PROJECT_NAME"
+cd "$PROJECT_NAME" || exit 1
 
-# Initialize npm project
-npm init -y
+# Initialize npm project if not already initialized
+if [ ! -f package.json ]; then
+  npm init -y
+  echo "Initialized npm project."
+fi
 
-# Install dependencies
+# Install necessary dependencies
 npm install express body-parser dotenv helmet cors mongoose jsonwebtoken bcryptjs joi swagger-ui-express express-rate-limit
 
 # Install dev dependencies
 npm install --save-dev nodemon jest supertest eslint
+
+# Function to create file if not exists
+create_file() {
+  if [ ! -f "$1" ]; then
+    touch "$1"
+    echo "Created file: $1"
+  else
+    echo "File '$1' already exists. Skipping creation."
+  fi
+}
 
 # Create project structure
 create_directory "src"
@@ -56,19 +65,40 @@ create_directory "src/models"
 create_directory "src/docs"
 
 # Create initial files
-touch src/index.js src/routes/index.js src/config/config.js \
-      src/middleware/logger.js src/middleware/errorHandler.js \
-      src/controllers/homeController.js src/controllers/authController.js \
-      src/tests/index.test.js src/models/user.js src/config/validateEnv.js \
-      src/docs/swagger.js
+create_file "src/index.js"
+create_file "src/routes/index.js"
+create_file "src/config/config.js"
+create_file "src/middleware/logger.js"
+create_file "src/middleware/errorHandler.js"
+create_file "src/controllers/homeController.js"
+create_file "src/controllers/authController.js"
+create_file "src/tests/index.test.js"
+create_file "src/models/user.js"
+create_file "src/config/validateEnv.js"
+create_file "src/docs/swagger.js"
 
 # Create .env files
-touch .env .env.example
-echo "PORT=3000" >>.env.example
-echo "NODE_ENV=development" >>.env.example
-echo "MONGO_URI=mongodb://localhost:27017/my-express-app" >>.env.example
-echo "JWT_SECRET=your_jwt_secret" >>.env.example
-cp .env.example .env
+create_file ".env"
+create_file ".env.example"
+
+# Populate .env.example if not already populated
+if [ ! -s .env.example ]; then
+  echo "PORT=3000" >>.env.example
+  echo "NODE_ENV=development" >>.env.example
+  echo "MONGO_URI=mongodb://localhost:27017/$PROJECT_NAME" >>.env.example
+  echo "JWT_SECRET=your_jwt_secret" >>.env.example
+  echo "Created file: .env.example"
+else
+  echo "File '.env.example' already exists and is not empty. Skipping population."
+fi
+
+# Populate .env if not already populated
+if [ ! -s .env ]; then
+  cp .env.example .env
+  echo "Created file: .env"
+else
+  echo "File '.env' already exists and is not empty. Skipping population."
+fi
 
 # Populate src/index.js with basic setup
 cat <<EOL > src/index.js
@@ -279,19 +309,27 @@ const swaggerDocument = {
             content: {
               'application/json': {
                 schema: {
-                  type: 'object',
-                  properties: {
-                    token: { type: 'string' },
+                      type: 'object',
+                      properties: {
+                        token: { type: 'string' },
+                      },
+                    },
+                    example: {
+                      token: 'your_jwt_token_here',
+                    },
                   },
                 },
               },
+              400: {
+                description: 'Bad request',
+              },
+              401: {
+                description: 'Unauthorized',
+              },
+              500: {
+                description: 'Internal Server Error',
+              },
             },
-          },
-          401: {
-            description: 'Invalid credentials',
-          },
-          500: {
-            description: 'Internal Server Error',
           },
         },
       },
@@ -316,11 +354,13 @@ const swaggerDocument = {
         },
         responses: {
           201: {
-            description: 'User registered successfully',
+            description: 'Successful registration',
+          },
+          400: {
+            description: 'Bad request',
           },
           500: {
-              description: 'Internal Server Error',
-            },
+            description: 'Internal Server Error',
           },
         },
       },
