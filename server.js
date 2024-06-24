@@ -2,15 +2,14 @@
 
 const express = require('express');
 const mongoose = require('mongoose');
+const { generateToken, verifyToken } = require('./auth');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 const mongoURI = process.env.MONGO_URI;
 
-// Middleware
-app.use(express.json()); // Parse JSON bodies
-// Add more middleware as needed
+app.use(express.json());
 
 mongoose.connect(mongoURI, {
   useNewUrlParser: true,
@@ -26,6 +25,11 @@ db.once('open', () => {
   const User = require('./models/User'); // Example model
   const generateAPIs = require('./generateApis');
   app.use('/api/users', generateAPIs(User));
+
+  // Example protected route
+  app.get('/api/protected', verifyToken, (req, res) => {
+    res.send({ message: 'You have access!' });
+  });
 
   app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
