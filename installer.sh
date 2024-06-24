@@ -110,6 +110,7 @@ const errorHandler = require('./middleware/errorHandler');
 const config = require('./config/config');
 const swaggerDocument = require('./docs/swagger');
 const validateEnv = require('./config/validateEnv');
+const { authenticateJWT } = require('./middleware/authenticate');
 
 dotenv.config();
 validateEnv();
@@ -163,12 +164,14 @@ setup_initial_routes() {
 const express = require('express');
 const homeController = require('../controllers/homeController');
 const authController = require('../controllers/authController');
+const { authenticateJWT } = require('../middleware/authenticate');
 
 const router = express.Router();
 
 router.get('/', homeController.getHome);
 router.post('/login', authController.login);
 router.post('/register', authController.register);
+router.post('/refresh-token', authController.refreshToken); // New endpoint for token refresh
 
 module.exports = router;
 EOL
@@ -185,13 +188,21 @@ module.exports = { getHome };
 EOL
 }
 
-# Function to set up initial auth controller
+# Function to set up initial auth controller with JWT authentication and refresh tokens
 setup_auth_controller() {
   cat <<EOL > src/controllers/authController.js
 const User = require('../models/user');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = process.env;
+
+const generateAccessToken = (userId) => {
+  return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '15m' });
+};
+
+const generateRefreshToken = (userId) => {
+  return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' });
+};
 
 const register = async (req, res) => {
   try {
@@ -213,15 +224,32 @@ const login = async (req, res) => {
     if (!user || !await bcrypt.compare(password, user.password)) {
       return res.status(401).send('Invalid credentials');
     }
-    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '1h' });
-    res.status(200).json({ token });
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+    res.status(200).json({ accessToken, refreshToken });
   } catch (err) {
     console.error('Error logging in:', err.message);
     res.status(500).send('Error logging in');
   }
 };
 
-module.exports = { register, login };
+const refreshToken = async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) {
+    return res.status(401).send('Refresh token is required');
+  }
+  try {
+    jwt.verify(refreshToken, JWT_SECRET);
+    const decoded = jwt.decode(refreshToken);
+    const accessToken = generateAccessToken(decoded.id);
+    res.status(200).json({ accessToken });
+  } catch (err) {
+    console.error('Error refreshing token:', err.message);
+    res.status(403).send('Invalid refresh token');
+  }
+};
+
+module.exports = { register, login, refreshToken };
 EOL
 }
 
@@ -317,11 +345,13 @@ const swaggerDocument = {
                 schema: {
                   type: 'object',
                   properties: {
-                    token: { type: 'string' },
+                    accessToken: { type: 'string' },
+                    refreshToken: { type: 'string' },
                   },
-                  example: {
-                    token: 'your_jwt_token_here',
-                  },
+                },
+                example: {
+                  accessToken: 'your_access_token_here',
+                  refreshToken: 'your_refresh_token_here',
                 },
               },
             },
@@ -329,10 +359,100 @@ const swaggerDocument = {
           400: {
             description: 'Bad request',
           },
-          401: {description: 'Unauthorized',
+          401: {
+            description: 'Unauthorized',
+          },
+          500: {
+            description: 'Internal Server Error',
+          },
         },
-        500: {
-          description: 'Internal Server Error',
+      },
+    },
+    '/register': {
+      post: {
+        summary: 'Register route',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  username: { type: 'string' },
+                  password: { type: 'string' },
+                },
+                required: ['username', 'password'],
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'Successful registration',
+            content: {
+              'text/plain': {
+                schema: {
+                  type: 'string',
+                  example: 'User registered successfully',
+                },
+              },
+            },
+          },
+          400: {
+            description: 'Bad request',
+          },
+          500: {
+            description: 'Internal Server Error',
+          },
+        },
+      },
+    },
+    '/refresh-token': {
+      post: {
+        summary: 'Refresh token route',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  refreshToken: { type: 'string' },
+                },
+                required: ['refreshToken'],
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Successful token refresh',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    accessToken: { type: 'string' },
+                  },
+                },
+                example: {
+                  accessToken: 'your_new_access_token_here',
+                },
+              },
+            },
+          },
+          400: {
+            description: 'Bad request',
+          },
+          401: {
+            description: 'Unauthorized',
+          },
+          403: {
+            description: 'Invalid refresh token',
+          },
+          500: {
+            description: 'Internal Server Error',
+          },
         },
       },
     },
@@ -364,6 +484,35 @@ const errorHandler = (err, req, res, next) => {
 };
 
 module.exports = errorHandler;
+EOL
+}
+
+# Function to set up JWT authentication middleware
+setup_jwt_authentication_middleware() {
+  cat <<EOL > src/middleware/authenticate.js
+const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = process.env;
+
+const authenticateJWT = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (authHeader) {
+    const token = authHeader.split(' ')[1];
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+      if (err) {
+        return res.sendStatus(403);
+      }
+
+      req.user = user;
+      next();
+    });
+  } else {
+    res.sendStatus(401);
+  }
+};
+
+module.exports = { authenticateJWT };
 EOL
 }
 
@@ -404,7 +553,36 @@ describe('POST /login', () => {
       .post('/login')
       .send({ username: 'testuser', password: 'testpassword' });
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toHaveProperty('token');
+    expect(res.body).toHaveProperty('accessToken');
+    expect(res.body).toHaveProperty('refreshToken');
+  });
+});
+
+describe('POST /refresh-token', () => {
+  it('should refresh access token using refresh token', async () => {
+    const loginRes = await request(app)
+      .post('/login')
+      .send({ username: 'testuser', password: 'testpassword' });
+    const refreshToken = loginRes.body.refreshToken;
+    const res = await request(app)
+      .post('/refresh-token')
+      .send({ refreshToken });
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toHaveProperty('accessToken');
+  });
+
+  it('should return 401 for missing refresh token', async () => {
+    const res = await request(app)
+      .post('/refresh-token')
+      .send({});
+    expect(res.statusCode).toEqual(401);
+  });
+
+  it('should return 403 for invalid refresh token', async () => {
+    const res = await request(app)
+      .post('/refresh-token')
+      .send({ refreshToken: 'invalid_refresh_token' });
+    expect(res.statusCode).toEqual(403);
   });
 });
 EOL
@@ -448,7 +626,7 @@ create_readme_file() {
   cat <<EOL > README.md
 # My Express App
 
-This is a simple Express.js project.
+This is a simple Express.js project with JWT authentication and refresh tokens.
 
 ## Getting Started
 
@@ -499,118 +677,49 @@ npm test
 npm run lint
 \`\`\`
 
-## Built With
+### API Documentation
 
-- [Express](https://expressjs.com/) - Fast, unopinionated, minimalist web framework for Node.js
-- [MongoDB](https://www.mongodb.com/) - NoSQL database
-- [Mongoose](https://mongoosejs.com/) - MongoDB object modeling tool
-- [jsonwebtoken](https://github.com/auth0/node-jsonwebtoken) - JSON Web Token implementation for Node.js
-- [bcryptjs](https://github.com/dcodeIO/bcrypt.js) - Password hashing library
-- [Joi](https://joi.dev/) - Object schema validation
-- [Swagger UI Express](https://www.npmjs.com/package/swagger-ui-express) - Swagger UI middleware for Express
-- [express-rate-limit](https://www.npmjs.com/package/express-rate-limit) - Rate limiting middleware for Express
-- [supertest](https://github.com/visionmedia/supertest) - HTTP assertions for testing
-- [Jest](https://jestjs.io/) - JavaScript Testing Framework
-- [nodemon](https://nodemon.io/) - Monitor for any changes in your source and automatically restart your server
+- Swagger API documentation is available at \`http://localhost:3000/api-docs\`.
 
-## Authors
+## Project Structure
 
-- **Your Name** - [YourGitHub](https://github.com/yourusername)
+The project structure is as follows:
+
+\`\`\`
+my-express-app/
+│
+├── src/
+│   ├── controllers/
+│   │   ├── authController.js
+│   │   └── homeController.js
+│   ├── middleware/
+│   │   ├── authenticate.js
+│   │   ├── errorHandler.js
+│   │   └── logger.js
+│   ├── models/
+│   │   └── user.js
+│   ├── routes/
+│   │   └── index.js
+│   ├── config/
+│   │   ├── config.js
+│   │   └── validateEnv.js
+│   ├── tests/
+│   │   └── index.test.js
+│   └── docs/
+│       └── swagger.js
+├── .env
+├── .env.example
+├── .eslintrc.json
+├── README.md
+└── package.json
+\`\`\`
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-EOL
-}
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-# Function to create .gitignore file
-create_gitignore_file() {
-  cat <<EOL > .gitignore
-node_modules/
-.env
-coverage/
-EOL
-}
+## Acknowledgments
 
-# Function to create GitHub Actions CI configuration
-create_github_actions_config() {
-  mkdir -p .github/workflows
-  cat <<EOL > .github/workflows/node.js.yml
-name: Node.js CI
-
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-
-jobs:
-  build:
-
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version:
-          - 14.x
-          - 16.x
-          - 18.x
-
-    steps:
-      - uses: actions/checkout@v2
-      - name: Use Node.js \${{ matrix.node-version }}
-        uses: actions/setup-node@v2
-        with:
-          node-version: \${{ matrix.node-version }}
-      - run: npm install
-      - run: npm run lint
-      - run: npm test
-EOL
-}
-
-# Main function to execute all setup functions
-main() {
-  command_exists node || {
-    echo 'Error: Node.js is required. Please install Node.js (https://nodejs.org/)' >&2
-    exit 1
-  }
-
-  command_exists npm || {
-    echo 'Error: npm is required. Please install npm (https://www.npmjs.com/)' >&2
-    exit 1
-  }
-
-  create_directory "my-express-app"
-  cd "my-express-app" || exit 1
-
-  initialize_npm_project
-  install_dependencies
-  install_dev_dependencies
-  setup_project_structure
-  populate_initial_files
-  setup_environment_files
-  setup_express_app
-  setup_initial_routes
-  setup_home_controller
-  setup_auth_controller
-  setup_user_model
-  setup_env_validation
-  setup_swagger_docs
-  setup_logger_middleware
-  setup_error_handler_middleware
-  setup_initial_tests
-  setup_eslint_config
-  update_package_json_scripts
-  create_readme_file
-  create_gitignore_file
-  create_github_actions_config
-
-  echo "Express.js starter pack installation complete."
-  echo "Run 'npm start' to start the server, 'npm run dev' to start the server with nodemon,"
-  echo "'npm test' to run tests, or 'npm run lint' to lint the code."
-}
-
-# Execute main function
-main
+- Express.js
+- MongoDB
+- JWT (JSON Web Tokens)
