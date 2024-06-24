@@ -307,6 +307,111 @@ const swaggerDocument = {
       description: 'Development Server',
     },
   ],
+  paths: {
+    '/': {
+      get: {
+        summary: 'Home endpoint',
+        responses: {
+          '200': {
+            description: 'Successful response',
+          },
+        },
+      },
+    },
+    '/login': {
+      post: {
+        summary: 'Login endpoint',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  username: {
+                    type: 'string',
+                  },
+                  password: {
+                    type: 'string',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Successful login',
+          },
+          '401': {
+            description: 'Invalid credentials',
+          },
+        },
+      },
+    },
+    '/register': {
+      post: {
+        summary: 'Register endpoint',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  username: {
+                    type: 'string',
+                  },
+                  password: {
+                    type: 'string',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'User registered successfully',
+          },
+          '500': {
+            description: 'Error registering user',
+          },
+        },
+      },
+    },
+    '/refresh-token': {
+      post: {
+        summary: 'Refresh token endpoint',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  refreshToken: {
+                    type: 'string',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Token refreshed successfully',
+          },
+          '401': {
+            description: 'Refresh token is required',
+          },
+          '403': {
+            description: 'Invalid refresh token',
+          },
+        },
+      },
+    },
+  },
 };
 
 module.exports = swaggerDocument;
@@ -354,6 +459,121 @@ module.exports = errorHandler;
 EOL
 }
 
+# Function to set up logging middleware
+setup_logger() {
+  cat <<EOL > src/middleware/logger.js
+const logger = (req, res, next) => {
+  console.log(\`\${req.method} \${req.url}\`);
+  next();
+};
+
+module.exports = { logger };
+EOL
+}
+
+# Function to seed the database with initial data
+seed_database() {
+  cat <<EOL > src/config/seed.js
+const mongoose = require('mongoose');
+const User = require('../models/user');
+
+const seedData = async () => {
+  await mongoose.connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  });
+
+  const admin = new User({
+    username: 'admin',
+    password: await bcrypt.hash('adminpassword', 10),
+    role: 'admin',
+  });
+
+  await admin.save();
+  console.log('Admin user created');
+
+  mongoose.connection.close();
+};
+
+seedData().catch(err => console.error(err));
+EOL
+}
+
+# Function to set up Dockerfile
+setup_dockerfile() {
+  cat <<EOL > Dockerfile
+FROM node:14
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+CMD ["node", "src/index.js"]
+EOL
+}
+
+# Function to set up Docker Compose
+setup_docker_compose() {
+  cat <<EOL > docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+  mongo:
+    image: mongo:4.2
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+EOL
+}
+
+# Function to set up CI/CD with GitHub Actions
+setup_github_actions() {
+  mkdir -p .github/workflows
+  cat <<EOL > .github/workflows/node.js.yml
+name: Node.js CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [14, 16]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Use Node.js \${{ matrix.node-version }}
+      uses: actions/setup-node@v2
+      with:
+        node-version: \${{ matrix.node-version }}
+    - run: npm install
+    - run: npm run lint
+    - run: npm test
+    - run: npm run build --if-present
+EOL
+}
+
 # Function to complete the setup
 complete_setup() {
   echo "Setup completed successfully!"
@@ -376,6 +596,11 @@ main() {
   setup_swagger_docs
   setup_jwt_middleware
   setup_error_handler
+  setup_logger
+  seed_database
+  setup_dockerfile
+  setup_docker_compose
+  setup_github_actions
   complete_setup
 }
 
