@@ -318,7 +318,10 @@ const swaggerDocument = {
           201: {
             description: 'User registered successfully',
           },
-          500: {description: 'Internal Server Error',
+          500: {
+              description: 'Internal Server Error',
+            },
+          },
         },
       },
     },
@@ -326,7 +329,6 @@ const swaggerDocument = {
 };
 
 module.exports = swaggerDocument;
-EOL
 
 # Populate src/middleware/logger.js with basic logger middleware setup
 cat <<EOL > src/middleware/logger.js
