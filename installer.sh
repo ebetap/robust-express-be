@@ -26,19 +26,20 @@ cd my-express-app
 npm init -y
 
 # Install Express.js and other dependencies
-npm install express body-parser dotenv morgan
+npm install express body-parser dotenv helmet cors
 
 # Install development dependencies
-npm install --save-dev nodemon jest supertest
+npm install --save-dev nodemon jest supertest eslint
 
 # Create directories and initial files
-mkdir -p src/routes src/config src/middleware src/tests
-touch src/index.js src/routes/index.js src/config/config.js src/middleware/logger.js src/middleware/errorHandler.js src/tests/index.test.js
+mkdir -p src/routes src/config src/middleware src/controllers src/tests
+touch src/index.js src/routes/index.js src/config/config.js src/middleware/logger.js src/middleware/errorHandler.js src/controllers/homeController.js src/tests/index.test.js
 
 # Create a .env file (template)
-touch .env
-echo "PORT=3000" >> .env
-echo "NODE_ENV=development" >> .env
+touch .env .env.example
+echo "PORT=3000" >> .env.example
+echo "NODE_ENV=development" >> .env.example
+cp .env.example .env
 
 # Add basic Express server setup to src/index.js
 cat <<EOL > src/index.js
@@ -46,6 +47,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 const morgan = require('morgan');
+const helmet = require('helmet');
+const cors = require('cors');
 const routes = require('./routes');
 const { logger } = require('./middleware/logger');
 const errorHandler = require('./middleware/errorHandler');
@@ -55,6 +58,10 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Security middlewares
+app.use(helmet());
+app.use(cors());
 
 // Middleware
 app.use(bodyParser.json());
@@ -77,13 +84,22 @@ EOL
 # Add basic route setup to src/routes/index.js
 cat <<EOL > src/routes/index.js
 const express = require('express');
+const homeController = require('../controllers/homeController');
+
 const router = express.Router();
 
-router.get('/', (req, res) => {
-  res.send('Hello World!');
-});
+router.get('/', homeController.getHome);
 
 module.exports = router;
+EOL
+
+# Add basic controller setup to src/controllers/homeController.js
+cat <<EOL > src/controllers/homeController.js
+const getHome = (req, res) => {
+  res.send('Hello World!');
+};
+
+module.exports = { getHome };
 EOL
 
 # Add basic configuration to src/config/config.js
@@ -138,10 +154,34 @@ describe('GET /', () => {
 });
 EOL
 
-# Add start, dev, and test scripts to package.json
+# Add ESLint configuration
+cat <<EOL > .eslintrc.json
+{
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "node": true,
+    "jest": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": 12,
+    "sourceType": "module"
+  },
+  "rules": {
+    "indent": ["error", 2],
+    "linebreak-style": ["error", "unix"],
+    "quotes": ["error", "single"],
+    "semi": ["error", "always"]
+  }
+}
+EOL
+
+# Add start, dev, test, and lint scripts to package.json
 npm set-script start "node src/index.js"
 npm set-script dev "nodemon src/index.js"
 npm set-script test "jest --coverage"
+npm set-script lint "eslint 'src/**/*.js'"
 
 # Create a README.md file
 cat <<EOL > README.md
@@ -185,12 +225,21 @@ This is a simple Express.js project.
 npm test
 \`\`\`
 
+### Linting
+
+\`\`\`
+npm run lint
+\`\`\`
+
 ## Built With
 
 - [Express](https://expressjs.com/) - The web framework used
 - [Nodemon](https://nodemon.io/) - Used for development to automatically restart the server
 - [Jest](https://jestjs.io/) - Testing framework
 - [Supertest](https://github.com/visionmedia/supertest) - HTTP assertions for testing
+- [ESLint](https://eslint.org/) - Linting utility
+- [Helmet](https://helmetjs.github.io/) - Security middleware
+- [Cors](https://github.com/expressjs/cors) - Middleware to enable CORS
 
 ## Authors
 
@@ -204,5 +253,36 @@ node_modules/
 coverage/
 EOL
 
+# Create a basic GitHub Actions CI configuration
+mkdir -p .github/workflows
+cat <<EOL > .github/workflows/node.js.yml
+name: Node.js CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [14, 16, 18]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Use Node.js \${{ matrix.node-version }}
+      uses: actions/setup-node@v2
+      with:
+        node-version: \${{ matrix.node-version }}
+    - run: npm install
+    - run: npm run lint
+    - run: npm test
+EOL
+
 # Completion message
-echo "Express.js starter pack installation complete. Run 'npm start' to start the server, 'npm run dev' to start the server with Nodemon, or 'npm test' to run tests."
+echo "Express.js starter pack installation complete. Run 'npm start' to start the server, 'npm run dev' to start the server with Nodemon, 'npm test' to run tests, or 'npm run lint' to lint the code."
