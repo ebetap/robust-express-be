@@ -40,7 +40,8 @@ install_dependencies() {
   npm install express@^4.17.1 body-parser@^1.19.0 dotenv@^10.0.0 helmet@^4.6.0 cors@^2.8.5 mongoose@^6.2.1 \
     jsonwebtoken@^8.5.1 bcryptjs@^2.4.3 joi@^17.4.0 swagger-ui-express@^4.1.6 express-rate-limit@^5.2.6 \
     csurf@^1.11.0 express-mongo-sanitize@^2.1.0 compression@^1.7.4 morgan@^1.10.0 cookie-parser@^1.4.5 \
-    connect-mongo@^4.5.0 multer@^1.4.3 nodemailer@^6.7.2 socket.io@^4.4.1 --save
+    connect-mongo@^4.5.0 multer@^1.4.3 nodemailer@^6.7.2 socket.io@^4.4.1 sequelize@^6.14.0 pg@^8.7.1 mysql2@^2.3.0 \
+    sqlite3@^5.0.2 --save
 }
 
 # Function to install dev dependencies with specific versions
@@ -86,6 +87,7 @@ setup_environment_files() {
   if [ ! -s .env.example ]; then
     echo "PORT=3000" >> .env.example
     echo "NODE_ENV=development" >> .env.example
+    echo "DB_TYPE=mongodb" >> .env.example  # Default to MongoDB
     echo "MONGO_URI=mongodb://localhost:27017/my-express-app" >> .env.example
     echo "JWT_SECRET=your_jwt_secret" >> .env.example
     echo "CSRF_SECRET=your_csrf_secret" >> .env.example
@@ -104,6 +106,81 @@ setup_environment_files() {
   fi
 }
 
+# Function to set up initial Sequelize configuration
+setup_sequelize() {
+  create_directory "src/models"
+  create_file "src/config/database.js"
+  create_file "src/models/index.js"
+
+  # Sequelize database configuration
+  local db_config="src/config/database.js"
+  cat <<EOL > "$db_config"
+const { Sequelize } = require('sequelize');
+const dotenv = require('dotenv');
+
+dotenv.config();
+
+const sequelize = new Sequelize(process.env.DB_NAME, process.env.DB_USER, process.env.DB_PASSWORD, {
+  host: process.env.DB_HOST,
+  dialect: process.env.DB_DIALECT, // 'mysql' | 'sqlite' | 'postgres' | 'mssql'
+});
+
+module.exports = sequelize;
+EOL
+
+  # Sequelize model index
+  local model_index="src/models/index.js"
+  cat <<EOL > "$model_index"
+const { Sequelize } = require('sequelize');
+const fs = require('fs');
+const path = require('path');
+const dotenv = require('dotenv');
+
+dotenv.config();
+const sequelize = require('../config/database');
+
+const db = {};
+
+fs.readdirSync(__dirname)
+  .filter(file => file !== 'index.js' && file.endsWith('.js'))
+  .forEach(file => {
+    const model = require(path.join(__dirname, file))(sequelize, Sequelize.DataTypes);
+    db[model.name] = model;
+  });
+
+Object.keys(db).forEach(modelName => {
+  if (db[modelName].associate) {
+    db[modelName].associate(db);
+  }
+});
+
+db.sequelize = sequelize;
+db.Sequelize = Sequelize;
+
+module.exports = db;
+EOL
+}
+
+# Function to set up initial Mongoose configuration
+setup_mongoose() {
+  create_directory "src/models"
+
+  # Mongoose model example
+  local user_model="src/models/user.js"
+  cat <<EOL > "$user_model"
+const mongoose = require('mongoose');
+
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+});
+
+const User = mongoose.model('User', userSchema);
+
+module.exports = User;
+EOL
+}
+
 # Function to set up initial Express app configuration with security enhancements
 setup_express_app() {
   local index_file="src/index.js"
@@ -113,7 +190,6 @@ const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
 const cors = require('cors');
-const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const swaggerUi = require('swagger-ui-express');
 const csurf = require('csurf');
@@ -144,18 +220,34 @@ const io = socketIo(server);
 
 const port = config.PORT || 3000;
 
-// Database connection
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => {
-  console.log('Connected to MongoDB');
-})
-.catch((err) => {
-  console.error('Error connecting to MongoDB:', err.message);
+// Database connection based on DB_TYPE
+if (process.env.DB_TYPE === 'mongodb') {
+  const mongoose = require('mongoose');
+  mongoose.connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => {
+    console.log('Connected to MongoDB');
+  })
+  .catch((err) => {
+    console.error('Error connecting to MongoDB:', err.message);
+    process.exit(1);
+  });
+} else if (process.env.DB_TYPE === 'sequelize') {
+  const { sequelize } = require('./models'); // Adjust Sequelize import path as necessary
+  sequelize.authenticate()
+    .then(() => {
+      console.log('Connected to the database');
+    })
+    .catch(err => {
+      console.error('Unable to connect to the database:', err);
+      process.exit(1);
+    });
+} else {
+  console.error('Unsupported database type. Please set DB_TYPE to "mongodb" or "sequelize" in your .env file.';
   process.exit(1);
-});
+}
 
 // Security middlewares
 app.use(helmet({
@@ -351,10 +443,33 @@ module.exports = { login, register, refreshToken };
 EOL
 }
 
-# Function to set up initial user model
+# Function to set up initial user model for Sequelize or Mongoose
 setup_user_model() {
-  local user_model="src/models/user.js"
-  cat <<EOL > "$user_model"
+  local db_type="$(grep -oP "(?<=DB_TYPE=).+" .env)"
+
+  if [[ "$db_type" == "sequelize" ]]; then
+    local user_model="src/models/user.js"
+    cat <<EOL > "$user_model"
+const { Sequelize, DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
+
+const User = sequelize.define('User', {
+  email: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true,
+  },
+  password: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+});
+
+module.exports = User;
+EOL
+  elif [[ "$db_type" == "mongodb" ]]; then
+    local user_model="src/models/user.js"
+    cat <<EOL > "$user_model"
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
@@ -366,6 +481,10 @@ const User = mongoose.model('User', userSchema);
 
 module.exports = User;
 EOL
+  else
+    echo "Unsupported database type '$db_type'."
+    exit 1
+  fi
 }
 
 # Function to set up initial middleware for authentication
@@ -426,7 +545,7 @@ describe('GET /', () => {
 EOL
 }
 
-# Main function to call all setup functions
+# Main function to call all setup functions based on chosen database type
 setup_express_app_setup_script() {
   initialize_npm_project
   install_dependencies
@@ -434,6 +553,19 @@ setup_express_app_setup_script() {
   setup_project_structure
   populate_initial_files
   setup_environment_files
+
+  local db_type="$(grep -oP "(?<=DB_TYPE=).+" .env)"
+
+  if [[ "$db_type" == "sequelize" ]]; then
+    setup_sequelize
+  elif [[ "$db_type" == "mongodb" ]]; then
+    setup_mongoose
+    echo "MongoDB selected. Setting up Mongoose..."
+  else
+    echo "Unsupported database type '$db_type'. Please set DB_TYPE to 'sequelize' or 'mongodb'."
+    exit 1
+  fi
+
   setup_express_app
   setup_initial_routes
   setup_home_controller
@@ -443,8 +575,8 @@ setup_express_app_setup_script() {
   setup_error_handler_middleware
   setup_initial_tests
 
-  echo "Express.js application setup script completed successfully."
+  echo "Setup completed successfully!"
 }
 
-# Execute main function
+# Main execution
 setup_express_app_setup_script
