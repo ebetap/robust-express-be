@@ -1,71 +1,71 @@
-## Documentation for Express.js Application Setup Script
+# Node.js Express Application Setup Script Documentation
 
-### Overview
+## Overview
 
-This setup script initializes an Express.js application with MongoDB integration, JWT authentication, and several middleware for security and development efficiency. It includes the creation of initial files, directories, environment configurations, and the installation of necessary dependencies.
+This setup script automates the process of initializing, configuring, and structuring a Node.js Express application. It supports both MongoDB and Sequelize (SQL) databases, providing flexibility based on your project's database requirements. The script also installs necessary dependencies, sets up project structure, initializes configuration files, and creates initial files like controllers, models, routes, and middleware.
 
-### Table of Contents
-1. [Prerequisites](#prerequisites)
-2. [Project Structure](#project-structure)
-3. [Environment Configuration](#environment-configuration)
-4. [Key Scripts](#key-scripts)
-5. [Middleware](#middleware)
-6. [Controllers](#controllers)
-7. [Models](#models)
-8. [Routes](#routes)
-9. [Testing](#testing)
-10. [Running the Application](#running-the-application)
-11. [API Documentation](#api-documentation)
-12. [Security Considerations](#security-considerations)
-13. [Additional Notes](#additional-notes)
+## Prerequisites
 
-### Prerequisites
+Before running the script, ensure the following prerequisites are met:
 
-Ensure you have the following installed before running the setup script:
-- Node.js (>= 14.x)
-- npm (Node Package Manager)
-- MongoDB
+- **Node.js and npm**: Ensure Node.js and npm (Node Package Manager) are installed on your system.
+- **MongoDB or SQL Database**: Depending on your choice (MongoDB or Sequelize), ensure the corresponding database server is installed and running.
+- **Environment Setup**: Prepare a `.env` file with necessary environment variables specific to your database configuration (see `.env.example` section).
 
-### Project Structure
+## Script Functions
 
-After running the script, your project directory will look like this:
-```
-my-express-app/
-├── logs/
-├── src/
-│   ├── config/
-│   │   ├── config.js
-│   │   ├── validateEnv.js
-│   ├── controllers/
-│   │   ├── authController.js
-│   │   ├── homeController.js
-│   ├── docs/
-│   │   ├── swagger.js
-│   ├── middleware/
-│   │   ├── authenticate.js
-│   │   ├── errorHandler.js
-│   │   ├── logger.js
-│   ├── models/
-│   │   ├── user.js
-│   ├── routes/
-│   │   ├── index.js
-│   ├── tests/
-│   │   ├── index.test.js
-│   ├── index.js
-├── .env
-├── .env.example
-├── package.json
-└── README.md
-```
+The script performs the following functions:
 
-### Environment Configuration
+1. **Check Command Existence**: Ensures required commands (`npm`, `node`) are available.
+   
+2. **Create Directory**: Creates directories if they do not exist, necessary for project structure.
 
-The script creates `.env` and `.env.example` files for environment-specific configurations.
+3. **Create File**: Creates files if they do not exist, such as main application files, configuration files, controllers, models, tests, etc.
 
-#### .env.example
-```env
+4. **Initialize npm Project**: Initializes an npm project (`npm init -y`) if `package.json` does not exist.
+
+5. **Install Dependencies**: Installs necessary npm packages for Express, database connectors (mongoose or sequelize), middleware, and testing libraries.
+
+6. **Install Development Dependencies**: Installs development dependencies like `nodemon`, `jest`, and `supertest` for automated testing and development purposes.
+
+7. **Setup Project Structure**: Creates a predefined directory structure (`src`, `src/routes`, `src/config`, `src/middleware`, `src/controllers`, `src/tests`, `src/models`, `src/docs`, `logs`) to organize application code and resources.
+
+8. **Populate Initial Files**: Creates initial files (`index.js`, `routes/index.js`, `config/config.js`, `middleware/logger.js`, `middleware/errorHandler.js`, `controllers/homeController.js`, `controllers/authController.js`, `tests/index.test.js`, `models/user.js`, `config/validateEnv.js`, `docs/swagger.js`) with basic boilerplate code to get started.
+
+9. **Setup Environment Files**: Creates `.env` and `.env.example` files if they do not exist, populates them with default configurations for MongoDB or Sequelize setups.
+
+10. **Setup Sequelize**: Sets up Sequelize configuration files (`src/config/database.js`, `src/models/index.js`) and model (`src/models/user.js`) if `DB_TYPE` is set to `sequelize`.
+
+11. **Setup Mongoose**: Sets up Mongoose model (`src/models/user.js`) if `DB_TYPE` is set to `mongodb`.
+
+12. **Setup Express Application**: Configures an initial Express application (`src/index.js`) with security middlewares, CORS, rate limiting, logging, compression, CSRF protection, and error handling.
+
+13. **Setup Initial Routes**: Creates initial routes (`src/routes/index.js`) and links controllers (`homeController`, `authController`) to handle HTTP requests.
+
+14. **Setup Home Controller**: Sets up a basic controller (`homeController.js`) with a sample route handler (`getHome`) returning a simple message.
+
+15. **Setup Auth Controller**: Implements authentication logic (`authController.js`) using JWT for login, registration, and token refresh.
+
+16. **Setup User Model**: Creates a user model (`user.js`) using Sequelize or Mongoose based on `DB_TYPE`.
+
+17. **Setup Authentication Middleware**: Implements JWT authentication middleware (`authenticate.js`) to protect routes requiring authentication.
+
+18. **Setup Error Handler Middleware**: Sets up a generic error handler middleware (`errorHandler.js`) to handle server errors and exceptions.
+
+19. **Setup Initial Tests**: Initializes a basic test (`index.test.js`) using Jest and Supertest to test a sample route.
+
+20. **Main Execution**: Combines all setup functions and executes based on `DB_TYPE` specified in the `.env` file.
+
+## `.env` Configuration
+
+Ensure your `.env` file is configured appropriately based on your chosen database (`mongodb` or `sequelize`). Here's an example configuration for both setups:
+
+### Example `.env` File for MongoDB
+
+```plaintext
 PORT=3000
 NODE_ENV=development
+DB_TYPE=mongodb
 MONGO_URI=mongodb://localhost:27017/my-express-app
 JWT_SECRET=your_jwt_secret
 CSRF_SECRET=your_csrf_secret
@@ -73,429 +73,36 @@ MAILER_EMAIL=user@example.com
 MAILER_PASSWORD=password
 ```
 
-**Explanation:**
-- `PORT`: Port number on which the server will run.
-- `NODE_ENV`: Environment setting (development, production, etc.).
-- `MONGO_URI`: MongoDB connection string.
-- `JWT_SECRET`: Secret key for signing JWT tokens.
-- `CSRF_SECRET`: Secret key for CSRF protection.
-- `MAILER_EMAIL` and `MAILER_PASSWORD`: Credentials for email sending.
+### Example `.env` File for Sequelize (MySQL) Setup
 
-### Key Scripts
-
-#### src/index.js
-Sets up the main Express server with middleware, security configurations, routes, and Socket.io integration.
-
-**Full Code Example:**
-```javascript
-const express = require('express');
-const bodyParser = require('body-parser');
-const dotenv = require('dotenv');
-const helmet = require('helmet');
-const cors = require('cors');
-const mongoose = require('mongoose');
-const rateLimit = require('express-rate-limit');
-const swaggerUi = require('swagger-ui-express');
-const csurf = require('csurf');
-const mongoSanitize = require('express-mongo-sanitize');
-const compression = require('compression');
-const morgan = require('morgan');
-const cookieParser = require('cookie-parser');
-const multer = require('multer');
-const nodemailer = require('nodemailer');
-const socketIo = require('socket.io');
-const http = require('http');
-const path = require('path');
-const routes = require('./routes');
-const { logger } = require('./middleware/logger');
-const errorHandler = require('./middleware/errorHandler');
-const config = require('./config/config');
-const swaggerDocument = require('./docs/swagger');
-const validateEnv = require('./config/validateEnv');
-const helmetCsp = require('helmet-csp');
-
-dotenv.config();
-validateEnv();
-
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
-
-const port = config.PORT || 3000;
-
-// Database connection
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => {
-  console.log('Connected to MongoDB');
-})
-.catch((err) => {
-  console.error('Error connecting to MongoDB:', err.message);
-  process.exit(1);
-});
-
-// Security middlewares
-app.use(helmet({
-  contentSecurityPolicy: false,
-}));
-app.use(helmetCsp({
-  directives: {
-    defaultSrc: ["'self'"],
-    scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-    styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-    fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-  },
-}));
-app.use(cors());
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-}));
-app.use(cookieParser());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(logger);
-app.use(errorHandler);
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Enable gzip compression
-app.use(compression());
-
-// Enable request logging
-app.use(morgan('combined'));
-
-// Prevent MongoDB Operator Injection and XSS
-app.use(mongoSanitize());
-
-// CSRF Protection
-app.use(csurf({ cookie: true }));
-
-// API documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-
-// Routes
-app.use('/', routes);
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).send('Something broke!');
-});
-
-// Socket.io implementation
-io.on('connection', (socket) => {
-  console.log('A user connected');
-  socket.on('disconnect', () => {
-    console.log('User disconnected');
-  });
-});
-
-server.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+```plaintext
+PORT=3000
+NODE_ENV=development
+DB_TYPE=sequelize
+DB_NAME=my_database
+DB_USER=my_user
+DB_PASSWORD=my_password
+DB_HOST=localhost
+DB_DIALECT=mysql
+JWT_SECRET=your_jwt_secret
+CSRF_SECRET=your_csrf_secret
+MAILER_EMAIL=user@example.com
+MAILER_PASSWORD=password
 ```
 
-#### src/config/config.js
-Handles environment variables and configuration.
+## Running the Script
 
-**Full Code Example:**
-```javascript
-const dotenv = require('dotenv');
+To run the setup script:
 
-dotenv.config();
+1. Save the script (`setup_script.sh`) in your project directory.
+2. Open a terminal and navigate to the project directory.
+3. Make the script executable if necessary: `chmod +x setup_script.sh`.
+4. Run the script: `./setup_script.sh`.
 
-module.exports = {
-  PORT: process.env.PORT,
-  MONGO_URI: process.env.MONGO_URI,
-  JWT_SECRET: process.env.JWT_SECRET,
-  CSRF_SECRET: process.env.CSRF_SECRET,
-  MAILER_EMAIL: process.env.MAILER_EMAIL,
-  MAILER_PASSWORD: process.env.MAILER_PASSWORD,
-};
-```
+Follow the prompts and instructions provided by the script to complete the setup process. Ensure you review and adjust configurations as per your specific project requirements.
 
-#### src/config/validateEnv.js
-Validates required environment variables.
+## Notes
 
-**Full Code Example:**
-```javascript
-const dotenv = require('dotenv');
-const joi = require('joi');
-
-dotenv.config();
-
-const envSchema = joi.object({
-  PORT: joi.number().default(3000),
-  NODE_ENV: joi.string().valid('development', 'production').default('development'),
-  MONGO_URI: joi.string().required(),
-  JWT_SECRET: joi.string().required(),
-  CSRF_SECRET: joi.string().required(),
-  MAILER_EMAIL: joi.string().email().required(),
-  MAILER_PASSWORD: joi.string().required(),
-}).unknown();
-
-const { error } = envSchema.validate(process.env);
-
-if (error) {
-  throw new Error(`Config validation error: ${error.message}`);
-}
-
-module.exports = () => {};
-```
-
-### Middleware
-
-#### src/middleware/authenticate.js
-JWT authentication middleware to protect routes.
-
-**Full Code Example:**
-```javascript
-const jwt = require('jsonwebtoken');
-const config = require('../config/config');
-
-const authenticateJWT = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, config.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    console.error('Error authenticating JWT:', error.message);
-    return res.status(403).json({ message: 'Invalid token' });
-  }
-};
-
-module.exports = { authenticateJWT };
-```
-
-#### src/middleware/errorHandler.js
-Handles application errors and returns a JSON response.
-
-**Full Code Example:**
-```javascript
-const errorHandler = (err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Internal server error' });
-};
-
-module.exports = errorHandler;
-```
-
-#### src/middleware/logger.js
-Logs HTTP requests using Morgan.
-
-**Full Code Example:**
-```javascript
-const morgan = require('morgan');
-
-const logger = morgan('combined');
-
-module.exports = { logger };
-```
-
-### Controllers
-
-#### src/controllers/homeController.js
-Handles requests to the home route.
-
-**Full Code Example:**
-```javascript
-const getHome = (req, res) => {
-  res.send('Hello World!');
-};
-
-module.exports = { getHome };
-```
-
-#### src/controllers/authController.js
-Manages user authentication (login, register, refresh tokens).
-
-**Full Code Example:**
-```javascript
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const User = require('../models/user');
-const config = require('../config/config');
-
-const login = async (req, res) => {
-  const { email, password } = req.body;
-
-  try {
-    // Check if user exists
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    // Check if password is correct
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return res.status(401).json({ message: 'Invalid credentials' });
-    }
-
-    // Generate access token
-    const accessToken = jwt.sign({ id: user._id }, config.JWT_SECRET, {
-      expiresIn: '15m',
-    });
-
-    // Generate refresh token (stored in cookie)
-    const refreshToken = jwt.sign({ id: user._id }, config.JWT_SECRET, {
-      expiresIn: '7d',
-    });
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      secure: process.env.NODE_ENV === 'production',
-    });
-
-    res.json({ accessToken });
-  } catch (error) {
-    console.error('Error logging in:', error.message);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-};
-
-const register = async (req, res) => {
-  const { email, password } = req.body;
-
-  try {
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create new user
-    const newUser = new User({ email, password: hashedPassword });
-    await newUser.save();
-
-    res.status(201).json({ message: 'User registered successfully' });
-  } catch (error) {
-    console.error('Error registering user:', error.message);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-};
-
-const refreshToken = async (req, res) => {
-  const token = req.cookies.refreshToken;
-
-  if (!token) {
-    return res.status(401).json({ message: 'Refresh token not found' });
-  }
-
-  try {
-    // Verify refresh token
-    const decoded = jwt.verify(token, config.JWT_SECRET);
-
-    // Generate new access token
-    const accessToken = jwt.sign({ id: decoded.id }, config.JWT_SECRET, {
-      expiresIn: '15m',
-    });
-
-    res.json({ accessToken });
-  } catch (error) {
-    console.error('Error refreshing token:', error.message);
-    res.status(403).json({ message: 'Invalid refresh token' });
-  }
-};
-
-module.exports = { login, register, refreshToken };
-```
-
-### Models
-
-#### src/models/user.js
-Defines the user schema for MongoDB.
-
-**Full Code Example:**
-```javascript
-const mongoose = require('mongoose');
-
-const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-});
-
-const User = mongoose.model('User', userSchema);
-
-module.exports = User;
-```
-
-### Routes
-
-#### src/routes/index.js
-Sets up initial routes with controllers and authentication middleware.
-
-**Full Code Example:**
-```javascript
-const express = require('express');
-const homeController = require('../controllers/homeController');
-const authController = require('../controllers/authController');
-const { authenticateJWT } = require('../middleware/authenticate');
-
-const router = express.Router();
-
-router.get('/', homeController.getHome);
-router.post('/login', authController.login);
-router.post('/register', authController.register);
-router.post('/refresh-token', authController.refreshToken); // New endpoint for token refresh
-
-module.exports = router;
-```
-
-### Testing
-
-#### src/tests/index.test.js
-Initial Jest test file using Supertest for API testing.
-
-**Full Code Example:**
-```javascript
-const request = require('supertest');
-const app = require('../index');
-
-describe('GET /', () => {
-  it('should return 200 OK', async () => {
-    const response = await request(app).get('/');
-    expect(response.status).toBe(200);
-    expect(response.text).toBe('Hello World!');
-  });
-});
-```
-
-### Running the Application
-
-To run the application after setup, execute:
-```bash
-node src/index.js
-```
-
-### API Documentation
-
-API documentation is available at `/api-docs` using Swagger UI.
-
-### Security Considerations
-
-- **JWT Tokens**: Secure storage and transmission of JWT secrets and tokens.
-- **Helmet and CSP**: Configured to prevent various types of attacks.
-- **CSRF Protection**: Implemented to prevent cross-site request forgery.
-- **Rate Limiting**: Limits requests to prevent abuse.
-
-### Additional Notes
-
-- Ensure MongoDB is running and accessible.
-- Update environment variables in `.env` as per your deployment needs.
-- Customize middleware and controllers based on your application's requirements.
-
-This documentation provides a comprehensive guide to setting up and understanding the Express.js application configured through the setup script. Adjustments and enhancements can be made based on specific project needs and security requirements.
+- **Security**: Keep `.env` files secure and do not expose them publicly.
+- **Customization**: Modify the script as needed to fit additional project requirements or preferences.
+- **Documentation**: Keep this document updated as the project evolves to reflect any changes or additional configurations.
